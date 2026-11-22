@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 22; this document was last changed in revision 22. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 23; this document was last changed in revision 23. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -588,19 +588,22 @@ Intersection-union per-timestep checks without Holm and prediction bounds on the
 
 Graded independence tiers and a transfer test replaced the shared-backbone exemption; gates became typed, pre-registered tests; turn-gate bootstraps, the "noise band", and "three seeds" were replaced by multiplicity control, fresh selection subsamples, and TOST with at least five seeds; contamination checks became modality-specific, asymmetric, and persisted; deadline masking was removed; detectors were defined; `data_version` became `data_ref` with a durable ledger; lockfiles gained hardware and resolved hashes; reproducibility became statistical re-execution.
 
-## 18. AI-native projects (revision 21)
+## 18. AI-native projects (revisions 21 and 23)
 
 An AI-native project turns one goal and one small labelled dataset into a trained model and a report whose claim is
-decided on data the training side never saw. This section defines the project, the stage protocol, the pipeline
-spec and the trust stages, and fixes the rule ids AN-1 to AN-11 that the tests cite. It builds on §3 (gates), §6
-(evaluator tiers) and §12 (records). Everything the AI-native path writes is JSON or JSONL with a schema id.
+decided on data the training side never saw. This section defines the project, the stage protocol, the pipeline spec
+and the trust stages, and fixes the rule ids AN-1 to AN-11 that the tests cite. Revision 23 adds the keeper (§18.9),
+the trust backend that holds the seal against an agent with a shell, with signed records, the alpha-investing rule
+(§18.5) and the scorer library (§18.4), and fixes the rule ids AN-12 to AN-19. It builds on §3 (gates), §6 (evaluator
+tiers) and §12 (records). Everything the AI-native path writes is JSON or JSONL with a schema id.
 
 ### 18.1 Project, `--json` and the project commands (AN-1, AN-2, AN-11)
 
 **Project.** One goal is one project: a directory holding `project.yaml` (goal text, data reference and hash, budget,
 driver, pipeline), every stage's inputs and outputs, the attempt log and the final deliverable. The project is the
-unit of the alpha budget (§18.5) and of resumption (AN-5). The directory layout and file names are fixed by the
-implementation, not by the design; the content rules are:
+unit of resumption (AN-5) and, on `InProcessTrust`, of the alpha budget (§18.5); under the keeper the alpha wealth
+belongs to the sealed set, which several projects on the same data share. The directory layout and file names are
+fixed by the implementation, not by the design; the content rules are:
 
 - **AN-2 (project store).** A project is created once and its goal text, data hash, budget and pipeline are recorded
   in `project.yaml`; creating over an existing project is refused. Every stage record carries a schema id and a
@@ -664,111 +667,186 @@ stage calls it:
 
 ```
 TrustBackend
-  seal(items)                  -> SealedRef    # sealed part stored out of the driver's reach (keeper, step 2; not the step 1 stub)
+  mode                         -> str          # "in_process" (InProcessTrust) or "keeper" (KeeperTrust, §18.9)
+  seal(items)                  -> SealedRef    # sealed part stored out of the driver's reach (the keeper; not InProcessTrust)
   sealed_summary(ref)          -> dict         # n, manifest_sha256, label_counts; never item content
   run_sealed(ref, generate)    -> list[dict]   # per-item records, never the items
   register(registration)       -> str          # the registration hash
   registration(hash)           -> dict
   latest_registration()        -> str | None   # the hash the last register returned
-  claim_sealed_evaluation(candidate, registration) -> dict   # the project's one sealed evaluation (AN-8)
-  sealed_evaluation()          -> dict | None  # the claim on record
+  claim_sealed_evaluation(candidate, registration) -> dict   # spends alpha first, then grants one attempt (AN-8)
+  sealed_evaluation()          -> dict | None  # the latest claim on record
   sealed_guarantee: str                        # what this backend does and does not guarantee
 ```
 
 The backend states in `sealed_guarantee` what it guarantees; reports and `--json` results quote it verbatim. The
-`TrustBackend` of the full design is the keeper daemon (§18.7). **Step 1 ships `InProcessTrust`**, whose
+`TrustBackend` of the full design is `KeeperTrust` (mode `keeper`), whose requests go over a local socket to the
+keeper, a daemon under its own OS user (§18.9). **Step 1 ships `InProcessTrust`** (mode `in_process`), whose
 `sealed_guarantee` is "unsealed (step 1): the operator process can read the sealed items, and every stage can read
-and rewrite the trust records and the attempt log". It splits, hashes and records through this interface, but it
-does not protect the sealed part, the registrations, the ledger or the attempt log from the process that runs the
-stages and does not run the candidate in an isolated container. Signing and verifying records (`sign`, `verify`)
-belong to the step 2 keeper backend and are not part of the step 1 interface. A step 1 result therefore shows the
-rule logic and carries no claim that an adversarial agent could not have read the sealed items or rewritten the
-records; the report of a project run on `InProcessTrust` says so in its known limits.
+and rewrite the trust records and the attempt log". It splits, hashes and records through this interface, but it does
+not protect the sealed part, the registrations, the ledger or the attempt log from the process that runs the stages
+and does not run the candidate in an isolated container. It stays, with `FixedAlphaLedger` (§18.5), for tests and for
+users without a keeper. Signing and verifying records belong to the keeper (AN-14) and are not part of the
+`InProcessTrust` path. A result on `InProcessTrust` therefore shows the rule logic and carries no claim that an
+adversarial agent could not have read the sealed items or rewritten the records; the report of a project run on
+`InProcessTrust` says so in its known limits.
 
 - **AN-6 (intake and seal).** `intake_seal` runs before any agent or LLM decision sees data contents. It hashes the
   data, splits it deterministically (seeded by the data hash) into a training part and a sealed part, and passes on
   only the training part, the sealed manifest hash and size, the label or answer-type distribution and schema-only
-  samples (no item content). Data without a verifiable answer or label per example are refused with the reason.
+  samples (no item content). Data without a verifiable answer or label per example are refused with the reason; a
+  label is a text, a number, an object or a list (a list carries a set-valued answer, as `set_f1` scores it, §18.4).
   The same data and seed give the same split. When the sealed part is smaller than the registered power plan needs,
   the stage reports plainly, before any training, that the gate will most likely be INCONCLUSIVE and how many more
   labelled examples would make it conclusive; margin and alpha are not relaxed. Synthetic examples may enlarge the
-  training part only, are generated from the training part alone, and are counted in the report.
+  training part only, are generated from the training part alone, and are counted in the report. Under the keeper the
+  split runs in the keeper, the sealed part never reaches the project, and the power plan uses the keeper's planning
+  alpha (§18.5, §18.9, AN-16).
 - **AN-7 (preregister and metric confirmation).** `preregister` writes the registration before training: base model,
-  scenario pack, evaluator and its version, deciding metric and direction, margin, alpha (from the ledger), sealed
-  item-set hash. The base model is recorded in the optional registration field `base_model: {"model_ref_sha256":
-  "sha256:<64 hex>"}` (the hash of the base model reference), with the scenario pack and the generator that serve
-  it; a base model reference that names no generator an installed scenario pack serves is refused here, before
-  anything trains, and `evaluate_sealed` refuses a baseline whose reference hash differs from the registered one.
-  Registrations without the field are unchanged. The metric comes from the scorer library (§18.4); the driver
-  proposes one scorer, a direction and a margin, and nothing trains until the user confirms or changes it. In step 1
-  the confirmation is the decision flag `metric_confirmed` that whoever runs the stage sets; there is no separate
-  channel to the user, and the report lists this in its known limits. After the confirmation any change is an
-  amendment and marks the result `post_hoc` (§3.7); a `post_hoc` result cannot produce a PASS headline. The training
-  reward may differ from the deciding scorer and the report states both.
-- **AN-8 (`evaluate_sealed` isolation).** `evaluate_sealed` feeds the sealed items to the candidate and hands only
-  the per-item records to the scorer; no other output leaves it, so neither the candidate nor agent-written code can
-  carry sealed items out or forge records. A project has one sealed scoring: before it scores any item,
-  `evaluate_sealed` claims it through the backend for the candidate's model reference hash and the registration, and
-  once the claim exists every further scoring is refused, for another candidate and for the same model reference
-  alike, because scoring several trainings on the sealed set and gating the best would select on the test data
-  without spending alpha. A done `evaluate_sealed` whose inputs are unchanged is reused, not run again. A model
-  reference must content-address its weights (for example carry their hash), so that a reference that did not change
-  names the same weights; step 1 does not check this, so after a retrain behind an unchanged reference (a mutable
-  checkpoint path) the gate records may describe weights the reference no longer points to, and the report says so
-  in its known limits. A new test needs new sealed data. Step 1 runs it as a stub through `InProcessTrust` and
-  states, through `sealed_guarantee`, that the isolation is not enforced; the rule is tested on the record flow
-  (records in, no item content out) and on the one-scoring claim, not on isolation.
-- **AN-9 (gate on the sealed records).** `gate` decides on the records `evaluate_sealed` produced and the
-  registration, by the existing gate path (§3); it refuses a registration that was amended after training began
-  unless the result is marked `post_hoc`, a records set whose hash differs from the registered item set, and an
-  attempt for which the `AlphaLedger` refuses (§18.5). Every attempt, including a refused one, is appended to the
-  attempt log (a refused one with its rule and reason); the alpha an attempt was granted is in the `AlphaLedger`'s
-  entries, and a refused attempt spends none.
-- **AN-10 (report from records).** `report` writes from records only: the gate result (PASS, FAIL or INCONCLUSIVE,
-  effect and interval in the metric's units, power), every gate attempt with the alpha spent, every
-  `evaluate_sealed` and gate attempt in the attempt log (refused ones included), and the known limits:
-  `sealed_guarantee`, that the alpha is per project in step 1, that the metric confirmation is the
+  scenario pack, evaluator and its version, deciding metric and direction, margin, alpha (the ledger's; under the
+  keeper the fixed planning alpha of §18.5, while each attempt's test level alpha_j is set by alpha-investing),
+  sealed item-set hash. The base model is recorded in the optional registration field `base_model:
+  {"model_ref_sha256": "sha256:<64 hex>"}` (the hash of the base model reference), with the scenario pack and the
+  generator that serve it; a base model reference that names no generator an installed scenario pack serves is
+  refused here, before anything trains, and `evaluate_sealed` refuses a baseline whose reference hash differs from
+  the registered one. Registrations without the field are unchanged. The metric comes from the scorer library
+  (§18.4); the driver proposes one scorer, a direction and a margin, and nothing trains until the user confirms or
+  changes it. In step 1 the confirmation is the decision flag `metric_confirmed` that whoever runs the stage sets;
+  there is no separate channel to the user, and the report lists this in its known limits. Under the keeper the
+  confirmation is a signed record the keeper makes (AN-18). After the confirmation any change is an amendment and
+  marks the result `post_hoc` (§3.7); a `post_hoc` result cannot produce a PASS headline. The training reward may
+  differ from the deciding scorer and the report states both.
+- **AN-8 (`evaluate_sealed` isolation and the alpha spend).** `evaluate_sealed` feeds the sealed items to the
+  candidate and hands only the per-item records to the scorer; no other output leaves it, so neither the candidate
+  nor agent-written code can carry sealed items out or forge records. Each sealed evaluation spends alpha first:
+  before it scores any item, `evaluate_sealed` claims an attempt through the backend (`claim_sealed_evaluation`) for
+  the candidate's model reference hash and the registration; the backend asks the `AlphaLedger` (§18.5) for the
+  attempt's alpha_j, records the claim with alpha_j, and only then scores. No candidate is scored on the sealed set
+  without a spend, because scoring several trainings on the sealed set and gating the best would select on the test
+  data without spending alpha. Within a project attempts differ only in the candidate, and the baseline is scored
+  once per sealed set and reused. A done `evaluate_sealed` whose inputs are unchanged is reused, not run again. A
+  model reference must content-address its weights (for example carry their hash), so that a reference that did not
+  change names the same weights; this is not checked, so after a retrain behind an unchanged reference (a mutable
+  checkpoint path) the gate records may describe weights the reference no longer points to, and the report says so in
+  its known limits. Under the keeper (§18.9) the keeper alone holds the sealed items, runs the registered generator
+  of an installed scenario pack in its own process, scores, and keeps the per-item records; the driver receives only
+  each attempt's status (PASS, FAIL, INCONCLUSIVE or MISSING) and the alpha spent and earned, never per-item results, which
+  would let an agent hill-climb on the sealed set across attempts. On `InProcessTrust` the ledger is
+  `FixedAlphaLedger`, which grants one attempt, so once the claim exists every further scoring is refused, for
+  another candidate and for the same model reference alike, and a new test needs new sealed data; `InProcessTrust`
+  states through `sealed_guarantee` that the isolation is not enforced, and the rule is tested there on the record
+  flow (records in, no item content out) and on the claim, not on isolation.
+- **AN-9 (gate on the sealed records).** `gate` decides on the records of the attempt's sealed evaluation and the
+  registration, by the existing gate path (§3), at the alpha_j the `AlphaLedger` granted that attempt. Under the
+  keeper the keeper computes the gate, since the per-item records stay there, and writes and signs the gate record;
+  the driver-side `gate` stage is a request to the keeper and copies the signed result into the project. `gate`
+  refuses a registration that was amended after training began unless the result is marked `post_hoc` (a change of
+  the registration after the first sealed attempt is such an amendment, so every later result is `post_hoc`), a
+  records set whose hash differs from the registered item set, and an attempt for which the `AlphaLedger` refuses
+  (§18.5). A granted attempt always settles: an attempt that crashes, or a gate result of MISSING or INCONCLUSIVE,
+  counts as not passed and costs its alpha, so a retry is never free. An attempt still open when the keeper restarts
+  is gated normally if its complete per-item records are stored, and settles as not passed if they are missing. A
+  PASS ends the project's attempts: a later `evaluate_sealed` on that project is refused, so a later FAIL can never
+  hide a PASS. Every attempt, including a refused one, is appended to the attempt log (a refused one with its rule
+  and reason); the alpha an attempt was granted is in the `AlphaLedger`'s entries, and an attempt refused before the
+  grant spends none.
+- **AN-10 (report from records).** `report` writes from records only: the headline gate result (PASS, FAIL or
+  INCONCLUSIVE, effect and interval in the metric's units, power), which is that of the project's PASS attempt if
+  there is one and else that of its latest attempt; every gate attempt with the alpha spent; every `evaluate_sealed`
+  and gate attempt in the attempt log (refused ones included); and the known limits. On `InProcessTrust` the known
+  limits are `sealed_guarantee`, that the alpha is per project in step 1, that the metric confirmation is the
   `metric_confirmed` flag, that a model reference must content-address its weights, and the number of
-  `evaluate_sealed` attempts. Step 1: not yet: what was trained, failures and preemptions beyond those attempts,
-  generated text (step 1 generates none: `report.md` is rendered from `report.json` alone, and a rendering that
-  differs is refused) and the rule that a generated summary may quote only numbers present in the records. The
-  deliverable is the model files (the last cut, or the base if nothing passed), a model card and the report; step 1:
-  not yet, it delivers the report only.
+  `evaluate_sealed` attempts. Under the keeper, the keeper builds `report.json` from its own records and signs it,
+  the driver-side `report` stage is a request to the keeper that copies the signed report into the project, the
+  report carries the keeper's key fingerprint, and the report closes the sealed set (AN-16); its known limits are
+  `KeeperTrust.sealed_guarantee` (§18.9), that the original data file is the user's and stays readable to anything
+  running as the user, the intake and registration oracles (§18.9, AN-16), that the metric confirmation records the
+  owner uid and not that a human typed it (AN-18), that a model reference must content-address its weights, the alpha
+  rule with its mFDR guarantee and the assumption that guarantee rests on (§18.5), and the number of sealed
+  evaluations. `report` verifies every signature it reads and refuses on a bad one (AN-14). Step 1: not
+  yet: what was trained, failures and preemptions beyond those attempts, generated text (step 1 generates none:
+  `report.md` is rendered from `report.json` alone, and a rendering that differs is refused) and the rule that a
+  generated summary may quote only numbers present in the records. The deliverable is the model files (the last cut,
+  or the base if nothing passed), a model card and the report; step 1: not yet, it delivers the report only.
 
 ### 18.4 Scorer library
 
-The deciding metric comes from a library shipped with gatedtrain, each scorer with a registered code hash: exact
-match, numeric match with tolerance, normalised string match, set and field-level F1 for extraction, volumetric IoU,
-and the scorers of the existing recipes. The gate tests the per-item difference of the candidate's and the base
-model's scores, so for power planning at intake the library supplies, per scorer, a planning standard deviation of
-that paired difference. For `exact_match` it is the bound for two independent 0/1 scores at p = 0.5: each has the
-largest standard deviation of a 0/1 score, 0.5, so the difference has sqrt(0.5^2 * 2) = sqrt(0.5), about 0.71.
-Positively correlated arms have a smaller standard deviation, so the plan does not under-size the sealed part for
-them.
+The deciding metric comes from a library shipped with gatedtrain (`gatedtrain.ainative.scorers`); each scorer has an
+evaluator id, a registered code hash, a direction and a planning standard deviation. The gate tests the per-item
+difference of the candidate's and the base model's scores, so for power planning at intake the library supplies, per
+scorer, a planning standard deviation of that paired difference. For a 0/1 scorer such as `exact_match` it is the
+bound for two independent 0/1 scores at p = 0.5: each has the largest standard deviation of a 0/1 score, 0.5, so the
+difference has sqrt(0.5^2 * 2) = sqrt(0.5), about 0.71. A scorer with values in [0, 1] has the same bound, since such
+a score's standard deviation is at most 0.5. Positively correlated arms have a smaller standard deviation, so the
+plan does not under-size the sealed part for them.
+
+| Scorer | Evaluator id | Score of one item | Direction | Planning SD |
+|---|---|---|---|---|
+| `exact_match` | `exact_match.ainative@0.1` | 1 when the prediction equals the label, else 0 | higher is better | sqrt(0.5) |
+| `numeric_match` | `numeric_match.ainative@0.1` | 1 when \|prediction − label\| ≤ max(`rel_tol` · \|label\|, `abs_tol`) (both parameters default to 0), else 0; the label is a finite number | higher is better | sqrt(0.5) |
+| `normalised_match` | `normalised_match.ainative@0.1` | 1 when both strings are equal after Unicode NFKC, case folding and whitespace collapse, else 0 | higher is better | sqrt(0.5) |
+| `set_f1` | `set_f1.ainative@0.1` | F1 of the prediction's and the label's elements, in [0, 1]; the label is a list | higher is better | sqrt(0.5) |
+| `field_f1` | `field_f1.ainative@0.1` | F1 of the top-level (field, value) pairs, in [0, 1], for extraction; the label is an object | higher is better | sqrt(0.5) |
+
+Every library scorer gives 0 to a prediction that is not canonical JSON; that applies only to a prediction passed to
+a scorer. Under the keeper a generator return value that is not canonical JSON never reaches the scorer: it is a crash
+of the attempt (AN-9), which settles as not passed and costs its alpha.
+
+- **AN-17 (scorer library and pack scorers by reference).** `preregister` takes the deciding scorer by name, from the
+  library first and then from the installed scenario packs, with its parameters. Volumetric IoU and the scorers of
+  the existing recipes are not reimplemented: a scenario pack registers them by reference (evaluator id, code hash,
+  planning SD, direction, range). An unknown scorer name, a pack scorer named like a library scorer, a pack scorer
+  whose code hash differs from its code, and an unknown, non-finite or negative scorer parameter are refused. Intake
+  sizes the sealed part with the planning SD sqrt(0.5), since the scorer is chosen later, at `preregister`;
+  `preregister`, and the keeper when it registers, refuse a scorer whose planning SD is larger than the one the
+  sealed set was sized for. A sealed label the chosen scorer cannot take is refused at registration, before any alpha
+  is spent, with a count and never a label.
 
 ### 18.5 Alpha budget and the `AlphaLedger`
 
-A project owns an alpha wealth and every gate attempt against the sealed set spends from it. The interface is:
+Every gate attempt against the sealed set spends from an alpha wealth: a project's on `InProcessTrust`, the sealed
+set's under the keeper. The interface is:
 
 ```
 AlphaLedger
-  available()                  -> float        # alpha still available
+  planning_alpha               -> float        # the alpha intake plans power with
+  available()                  -> float        # alpha still available to the next attempt
   spend(attempt_id)            -> float        # alpha granted to this attempt; refuses when none is available
   record(attempt_id, passed)   -> None         # settles the attempt in the log
   entries()                    -> list[dict]   # the attempt log
 ```
 
-**Step 1 ships `FixedAlphaLedger`:** alpha 0.05 and one attempt. `spend` grants 0.05 to the first gate attempt and
-refuses every later one; `record` only settles the attempt in the log and earns nothing back, and `entries` lists
-every attempt. It guarantees that a project's one sealed test is made at the alpha the ledger grants and nothing
-about repeated testing, because repeated testing is not allowed at all: the gate runs once and `evaluate_sealed`
-scores one candidate per project (AN-8). In step 1 the alpha is per project: a new project on the same data would
-get a fresh alpha and the same sealed split, so its test would not be independent of the first; a new test needs new
-sealed data, and the report says so in its known limits. Keying the budget by the sealed set (or the data hash)
-belongs to the step 2 keeper. The rule that spends and earns wealth over many attempts (an alpha-investing procedure
-or a generalised variant) and its false-discovery guarantee are **step 2, open**; the choice of variant is left to
-the maintainers in that step. Earning alpha back after a rejection belongs to that step 2 ledger and is not part of
-the step 1 interface.
+**Step 1 ships `FixedAlphaLedger`:** alpha 0.05 and one attempt; its planning alpha is 0.05. `spend` grants 0.05 to
+the first gate attempt and refuses every later one; `record` only settles the attempt in the log and earns nothing
+back, and `entries` lists every attempt. It guarantees that a project's one sealed test is made at the alpha the
+ledger grants and nothing about repeated testing, because repeated testing is not allowed at all: the gate runs once
+and `evaluate_sealed` scores one candidate per project (AN-8). In step 1 the alpha is per project: a new project on
+the same data would get a fresh alpha and the same sealed split, so its test would not be independent of the first; a
+new test needs new sealed data, and the report says so in its known limits. It stays for tests and for users without
+a keeper.
+
+**The keeper ships alpha-investing (Foster-Stine).** `KeeperAlphaLedger` asks the keeper, which keeps the wealth
+keyed by the sealed set id, so a new project on the same data shares the wealth. The initial wealth is
+W0 = 0.05 * (1 - 0.05) = 0.0475; attempt j bids alpha_j = W_{j-1} / 2, capped at W_{j-1} / (1 + W_{j-1}), the bid
+whose cost is the whole wealth, so that a bid never costs more than the wealth (the cap binds only above a wealth of
+1, so every number below is unchanged; W = 3 bids 0.75 and a non-pass costs 3); a FAIL, INCONCLUSIVE, MISSING or
+crashed attempt costs alpha_j / (1 - alpha_j); a PASS earns the payout 0.05; the keeper refuses an attempt when
+alpha_j < 0.005 (too small for a meaningful test). For example, three attempts from W0 that do not pass bid 0.02375,
+about 0.0116 and about 0.0057, and a fourth would bid about 0.0028 and is refused; a PASS on the first attempt leaves
+the wealth at 0.0975. Guarantee: mFDR at level 0.05 (marginal false discovery rate over the attempts on a sealed
+set), stated in the report. The report's known limits state the assumption it rests on: each test is valid given the
+earlier outcomes; the sealed items are reused across attempts and only each attempt's status is revealed. This is a
+stated limit, not a weaker guarantee. The power plan at intake under the keeper always uses the first bid at the initial
+wealth, W0 / 2 = 0.02375 (`planning_alpha`), a fixed number so that sizing does not depend on the wealth, which
+depends on the set; this is smaller than step 1's 0.05, so sealed sets come out larger for the same margin. The gate
+uses alpha_j exactly as step 1 uses the ledger's alpha.
+
+- **AN-15 (alpha-investing ledger).** The keeper grants an attempt its alpha_j by the rule above before anything is
+  scored (AN-8), records the grant and the settlement as signed ledger entries, and settles every granted attempt
+  (AN-9). It refuses an attempt when alpha_j < 0.005, with the fix that a new test needs new labelled data. Claims on
+  one sealed set are serialised: when two projects claim at the same moment, the second bid is computed from the
+  wealth after the first attempt settles, so no wealth is spent twice. A ledger replayed from its entries in order,
+  from W0, reproduces every bid; an entry whose alpha is not the bid of the replayed wealth is refused.
 
 ### 18.6 Drivers, budget and checkpoints
 
@@ -781,13 +859,15 @@ backend executes jobs itself (the launch rules, the preemption and attempt recor
 changes the principle that gatedtrain never starts a process for this path only; the `ext-*` commands keep printing
 commands. The drivers and the local backend are not part of step 1.
 
-### 18.7 Open in revision 21
+### 18.7 Open after revision 23
 
-- **Step 2, open:** the keeper daemon (a separate OS user holding the sealed data, registrations, ledger and a signing
-  key, so that the seal holds against an agent with a shell); signatures verified by `report`; the alpha-investing
-  variant, its spending fraction and payout, and its false-discovery guarantee; the scorer library beyond the
-  scorers listed in §18.4.
-- **Later steps:** the local backend and runner on a GPU, the MCP server and orchestrator, the second scenario pack.
+- **Decided in revision 23 (step 2):** the keeper (§18.9), signed records verified by `report` and `verify` (AN-14),
+  the alpha-investing rule and its false-discovery guarantee (§18.5, AN-15), and the scorer library of §18.4 (AN-17).
+- **Later steps:** containers for the sealed evaluation, with the local backend and runner on a GPU (step 3),
+  including how a real scenario pack gives the keeper user read access to model files kept under the user's home (the
+  synthetic pack's inline models need none); the MCP server and the orchestrator (step 4); a hosted keeper; several
+  hosts; installing the keeper as a service on Windows or macOS; key rotation; a second channel for the metric
+  confirmation (AN-18); the second scenario pack.
 
 ### 18.8 Rule index
 
@@ -800,10 +880,133 @@ commands. The drivers and the local backend are not part of step 1.
 | AN-5 | Idempotent and resumable stages | §18.2 |
 | AN-6 | Intake and seal | §18.3 |
 | AN-7 | Preregister and metric confirmation | §18.3 |
-| AN-8 | `evaluate_sealed` isolation (stub in step 1) | §18.3 |
-| AN-9 | Gate on the sealed records | §18.3 |
-| AN-10 | Report from records | §18.3 |
+| AN-8 | `evaluate_sealed` isolation; each sealed evaluation spends alpha first (isolation not enforced on `InProcessTrust`) | §18.3 |
+| AN-9 | Gate on the sealed records at alpha_j; a granted attempt always settles | §18.3 |
+| AN-10 | Report from records (built and signed by the keeper) | §18.3 |
 | AN-11 | Project commands | §18.1 |
+| AN-12 | Keeper protocol and peer credentials | §18.9 |
+| AN-13 | Keeper environment and model file formats | §18.9 |
+| AN-14 | Signed records, the trust anchor and `verify` | §18.9 |
+| AN-15 | Alpha-investing ledger | §18.5 |
+| AN-16 | Sealed items tracked one by one; a report closes the sealed set | §18.9 |
+| AN-17 | Scorer library and pack scorers by reference | §18.4 |
+| AN-18 | Metric confirmation record | §18.9 |
+| AN-19 | `setup keeper` prints, never runs | §18.9 |
+
+### 18.9 The keeper (revision 23)
+
+The keeper makes the seal hold against an agent that runs as the user with a shell: the agent cannot read sealed
+items, cannot edit a registration, claim, ledger entry or gate record without detection, and cannot get sealed
+evaluations without spending alpha. It is Linux only (Unix socket, `SO_PEERCRED`).
+
+**Process and protocol.** `gatedtrain keeper serve --state DIR --socket PATH --owner-uid UID` runs the keeper, a
+daemon under its own OS user that alone holds the sealed items, the registrations, the sealed-evaluation claims and
+per-item records, the alpha ledger and an Ed25519 signing key. Its state directory has mode 0700 and is owned by the
+keeper user. Drivers reach it over a local Unix socket: `KeeperTrust` and `KeeperAlphaLedger` implement the
+`TrustBackend` and `AlphaLedger` interfaces as requests to it, the stage machine is unchanged, and `evaluate_sealed`,
+`gate` and `report` become requests to the keeper, which scores, computes the gate and builds the report.
+
+- **AN-12 (keeper protocol and peer credentials).** One JSON request per line, `{"op": ..., "project": ..., "args":
+  {...}}`, gets one JSON response `{"ok": bool, "result": ..., "problems": [...]}` with the problems in the AN-1
+  shape (`rule`, `field`, `message`, `fix`). The socket accepts only peers whose `SO_PEERCRED` uid is the owner uid
+  (the user) or the keeper's own uid. Requests are size-capped; a line over the cap, a line that is not a JSON
+  object, an unknown op or a peer that sends nothing gets one problem response or a closed connection after a
+  timeout, and the keeper keeps serving the next client. Every op is idempotent or guarded by an atomic claim, as in
+  step 1. A second keeper on the same state directory refuses to start. The keeper derives everything it stores from
+  its own state; it never follows a path the driver supplies except to read the candidate model files and the
+  training-side records it needs, which it hashes on read. No response, record, log line or error message contains a
+  sealed input or label; an exception raised by pack code is reported by its class name only.
+- **AN-13 (keeper environment and model file formats).** The keeper runs only code the user's account cannot change,
+  because code running as the keeper user can read every sealed set and the signing key. It never imports from the
+  user's environment but from its own virtual environment with gatedtrain and the scenario packs installed at pinned
+  versions; `setup` (AN-19) makes that environment root-owned. The start-up check accepts code owned by root or by
+  the keeper's own uid; a keeper-owned environment is therefore not writable by the owner uid only when the keeper
+  runs under its own user, and in the same-user test mode, where the keeper's uid is the owner's, the owner can
+  change it (the same-user guarantee says nothing is sealed). At start the keeper records the distributions it runs
+  (gatedtrain, the scenario packs and gatedtrain's runtime dependencies) and their file hashes in a signed
+  environment record, and it refuses to start when its code or environment can be written by a uid other than its own
+  or root, when its state directory is open to other users, or when the socket's directory can be written by a uid
+  other than its own or root (that uid could replace the socket and answer drivers in the keeper's place). Model files are read as data only: formats that run
+  code on load (pickle-based checkpoints) are refused, before any alpha is spent.
+- **AN-19 (`setup keeper` prints, never runs).** `gatedtrain setup keeper [--user gatedtrain-keeper]` prints the
+  privileged commands (create the keeper user, the state directory and the socket directory, the root-owned virtual
+  environment with its pinned installs, and a systemd unit), the check command and the command that prints the
+  keeper's key fingerprint for the user to keep out of band (AN-14); the user runs them with sudo once. gatedtrain
+  never runs sudo, and `setup` writes nothing. A path holding `%`, `$`, whitespace, a quote or a backslash is refused,
+  since systemd rewrites or splits those in the unit's `ExecStart=`.
+
+**Intake over the socket.** `intake_seal` sends the whole data file over the socket; the keeper splits it (the
+deterministic split of AN-6), stores the sealed part, and returns the training part, the sealed summary and the
+sealed set id. The sealed items never touch the project directory. Known limit: the original data file is the user's
+and stays readable to anything running as the user; the user should run intake before handing the project to an agent
+and keep the original out of its reach. The report says so (AN-10).
+
+- **AN-16 (sealed items tracked one by one; a report closes the sealed set).** The keeper keeps the content hash of
+  every item it has ever sealed, which is the hash of the item's canonical input, so a relabelled item counts as
+  already sealed, and it records every input it released as training, by the same hash. A byte-identical data file
+  (same sha256) reuses its sealed set, so a new project on the same data shares that set's wealth (§18.5). Any other
+  data that contain an item already sealed, in any earlier sealed set, open or closed, are refused with the fix "a
+  new test needs new labelled data", naming a count and never an item, so reshuffling or editing the data cannot buy
+  fresh wealth on old items. An input released as training in an earlier split is forced into the training part of
+  any later split, so an item whose label the training side has seen is never sealed. After `report` the keeper
+  refuses every further claim on that sealed set from any project, so the full numbers cannot feed another attempt on
+  the same items. Known limit (the report states it): the keeper answers some requests about sealed data with counts
+  and does not limit how often they are asked. Opening a project is free and a refused intake stores nothing, so
+  anything running as the user can send candidate data files to new projects and learn from the refusals how many of
+  their inputs were sealed before, and by repeating this which ones (group testing); a registration refused for its
+  scorer names how many sealed labels that scorer cannot take, which reveals counts of label types in the sealed part.
+  Throttling is a later step.
+
+**Registrations and metric confirmation.** `register` stores and signs the registration in the keeper; the project
+holds a copy with the signature.
+
+- **AN-18 (metric confirmation record).** `gatedtrain keeper confirm <project>` shows the one plain sentence the user is
+  asked to confirm (scorer, direction, margin) and the keeper records the confirmation, signed, with the time and the uid of the peer
+  that sent it. The keeper refuses a registration without a confirmation that matches its scorer, scorer parameters,
+  direction and margin. Known limit: an agent with the user's shell can run `gatedtrain keeper confirm` too; the
+  keeper records that the confirmation came from the owner uid, not that a human typed it. A second channel (a code
+  shown on another device) is a later step (§18.7).
+
+**Sealed evaluation and alpha.** Each sealed evaluation spends alpha first (AN-8): the keeper grants alpha_j (AN-15),
+records and signs the claim (candidate model hash, registration hash, alpha_j), and only then runs the registered
+generator of an installed scenario pack in its own process (revision 23: the synthetic pack; containers come with the
+local backend, §18.7) and scores. A candidate scored on the sealed set without a spend is impossible, because the
+keeper alone holds the items. The per-item records stay in the keeper; the driver receives each attempt's status and
+the alpha spent and earned. The keeper computes the gate at alpha_j by the existing gate path (AN-9), and builds and
+signs the gate record and `report.json` (AN-10); `report.md` is still rendered from `report.json` alone.
+
+**Signatures and the trust anchor.**
+
+- **AN-14 (signed records, the trust anchor and `verify`).** The keeper holds one Ed25519 key per installation, in a
+  key file that is refused when any group or other mode bit is set. It signs registrations, metric confirmations,
+  sealed-evaluation claims, ledger entries, gate records and the report; a signature covers the canonical JSON (RFC
+  8785) of `{"kind", "key_fingerprint", "record"}`, and the key fingerprint is `sha256:` followed by the sha256 of
+  the raw 32-byte public key. The public key is written into each project (`trust/keeper.pub`) and its fingerprint
+  into the report. `report` verifies every signature it reads and refuses on a bad one. The copy of the public key in
+  the project is a convenience, not an anchor: the agent can write the project, and the owner's config too, since it
+  runs as the owner. `gatedtrain verify <project>` therefore checks against the key the keeper serves over its
+  socket, and the keeper also confirms that it signed each record (it keeps the signed records); `verify` also
+  refuses when the project's copy of the key or the fingerprint the project is bound to differs from the anchor.
+  Offline, `gatedtrain verify <project> --fingerprint <fp>` checks against a fingerprint the reader got out of band.
+  Without either, `verify` says that it checked consistency only; so it does against a keeper that runs as the owner's
+  own uid (its `hello` says `same_user`), since the owner can read that keeper's key, and exits 1. The driver keeps
+  every envelope the keeper signed for the project: after each evaluate, gate and report, and when the project's
+  report is printed, it fetches the keeper's list for the project and adds each envelope it lacks, verified first. A
+  driver can miss one without tampering: a client that stopped waiting during an evaluation never received that
+  attempt's claim and grant, and after a retrain the identical request that would return them is never sent. A
+  scoring error after the grant that is not a refusal (a failed write) settles the attempt as not passed and returns
+  the spend's envelopes, as a refusal does. A record the keeper signed that the project still lacks fails `verify`
+  against the keeper, with a message that names both causes (not received, or deleted).
+
+**Guarantees.** `KeeperTrust.sealed_guarantee` states: "the sealed items, registrations, claims, ledger and per-item
+records are held by a separate OS user running code the user's account cannot change, and every record is signed; the
+candidate runs inside the keeper process, not in a container (a model format that executes code is refused); the
+original data file and the metric confirmation are only as strong as the user's own account; a root user or the
+keeper's own account can break all of it." When the keeper runs as the owner's own OS user, as in the tests and CI,
+it states instead: "the keeper runs as the owner's own OS user, so anything running as the user can read its state
+and signing key: the records are signed, but nothing is sealed (a test or development setup)". The tests run the
+keeper as a subprocess of the test user; the separate-user property is checked once by hand on a host with a real
+keeper user.
 
 ## Notes for the overview and sibling documents
 
