@@ -2,7 +2,7 @@
 
 Design set of gatedtrain, a composable post-training framework: contracts, run and checkpoint protocol, control plane, workflow and gates, evaluation statistics and lineage, security, operations, and per-family execution for post-training LLMs, VLMs, diffusion, speech, and control policies.
 
-The framework `gatedtrain` (Python distribution `gatedtrain`, import `gatedtrain`, repository `github.com/gatedtrain/gatedtrain`) implements **revision 24** of this design. Its code and tests cite the design by file and section (for example `05 §6.1`) and by rule ids (`R15-1`, `R18-8`, `EXT-*`, `MM-*`); file names, section numbers, and ids are the stable references; line numbers cited by the code match the revision the code was written against and may have shifted since.
+The framework `gatedtrain` (Python distribution `gatedtrain`, import `gatedtrain`, repository `github.com/gatedtrain/gatedtrain`) implements **revision 24** of this design except the training-seed unit of revision 20 (05 §3.3). Its code and tests cite the design by file and section (for example `05 §6.1`) and by rule ids (`R15-1`, `R18-8`, `EXT-*`, `MM-*`); file names, section numbers, and ids are the stable references; line numbers cited by the code match the revision the code was written against and may have shifted since.
 
 This repository (`github.com/gatedtrain/gatedtrain-design`) holds the published documents of the maintainers' design set. The implementation plan, panel review records, and decision records that the documents mention are working material and are not published.
 
