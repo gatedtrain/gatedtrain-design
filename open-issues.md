@@ -1,6 +1,6 @@
 # Open Issues Register
 
-**Status:** maintained alongside the design, which is at revision 23; its entries were recorded against revision 9 and the implementation-plan review. A prototype (`gatedtrain` 0.3.0) implements revision 19. Each entry is a review finding deliberately deferred to a later phase. An entry closes when the phase that owns it updates the relevant sub-design; until then the sub-design text stands as written.
+**Status:** maintained alongside the design, which is at revision 24; its entries were recorded against revision 9 and the implementation-plan review. A prototype (`gatedtrain` 0.3.0) implements revision 19. Each entry is a review finding deliberately deferred to a later phase. An entry closes when the phase that owns it updates the relevant sub-design; until then the sub-design text stands as written.
 
 **Gate** is the phase whose entry (or a named event) must not pass while the issue is open. **Owner** is a maintainer role, not a person; maintainers take on the role when the phase's scope is decided. Site roles (site administrators, health-service operators) are prerequisites that an operator's site provides.
 
