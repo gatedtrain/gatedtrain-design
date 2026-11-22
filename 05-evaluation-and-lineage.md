@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 20; this document was last changed in revision 20. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 21; this document was last changed in revision 21. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -585,6 +585,223 @@ Intersection-union per-timestep checks without Holm and prediction bounds on the
 ### 17.2 Revision 7 (from revision 6)
 
 Graded independence tiers and a transfer test replaced the shared-backbone exemption; gates became typed, pre-registered tests; turn-gate bootstraps, the "noise band", and "three seeds" were replaced by multiplicity control, fresh selection subsamples, and TOST with at least five seeds; contamination checks became modality-specific, asymmetric, and persisted; deadline masking was removed; detectors were defined; `data_version` became `data_ref` with a durable ledger; lockfiles gained hardware and resolved hashes; reproducibility became statistical re-execution.
+
+## 18. AI-native projects (revision 21)
+
+An AI-native project turns one goal and one small labelled dataset into a trained model and a report whose claim is
+decided on data the training side never saw. This section defines the project, the stage protocol, the pipeline
+spec and the trust stages, and fixes the rule ids AN-1 to AN-11 that the tests cite. It builds on §3 (gates), §6
+(evaluator tiers) and §12 (records). Everything the AI-native path writes is JSON or JSONL with a schema id.
+
+### 18.1 Project, `--json` and the project commands (AN-1, AN-2, AN-11)
+
+**Project.** One goal is one project: a directory holding `project.yaml` (goal text, data reference and hash, budget,
+driver, pipeline), every stage's inputs and outputs, the attempt log and the final deliverable. The project is the
+unit of the alpha budget (§18.5) and of resumption (AN-5). The directory layout and file names are fixed by the
+implementation, not by the design; the content rules are:
+
+- **AN-2 (project store).** A project is created once and its goal text, data hash, budget and pipeline are recorded
+  in `project.yaml`; creating over an existing project is refused. Every stage record carries a schema id and a
+  schema version and is stored inside the project directory, which is what ties it to the project (a record holds no
+  separate project id); a record is read back against the sha256 recorded when it was written, and a record that
+  fails that check or its schema is refused on read, never repaired.
+
+**`--json`.** Every command of the AI-native path can print one JSON document so that a driver never parses human
+text.
+
+- **AN-1 (`--json` result shape).** With `--json` before the subcommand, a command prints exactly one JSON object on
+  stdout with `schema` (`gatedtrain.cli_result`), `schema_version`, `command`, `ok` (boolean), `exit` (the exit
+  code), `data` (an object; empty on a refusal), `problems` (a list; each entry has `rule`, `field`, `message`,
+  `fix`, the fields of the existing `error[RULE] field: msg | fix:` line) and `warnings` (a list of strings).
+  Nothing else is written to stdout and nothing to stderr. The exit code is the existing one; a usage error is the
+  object with rule `USAGE` and exit 2, an unexpected exception the object with rule `INTERNAL` and exit 1 (the
+  exception class only). No result of any command contains sealed content (§18.3).
+- **AN-11 (project commands).** `gatedtrain project` has `create`, `plan`, `run` (one stage, with an optional
+  decision file), `status` and `report`. A decision file that is not one JSON object is refused; `report` is refused
+  while the report stage is not done, and says whether a gate result is recorded; `run` of the gate and `report`
+  exit 0 on PASS and 1 on another status, and a refusal exits 3. `status` shows, apart from the derived stage
+  states, the gate result recorded in the attempt log and the alpha ledger, so a stale or refused stage never hides
+  a recorded verdict.
+
+### 18.2 Stages and pipelines (AN-3, AN-4, AN-5)
+
+A **stage** is a plugin (entry-point group `gatedtrain.stages`) with a name and version, declared input and output
+artifact schemas, `plan(ctx) -> proposal` (what it would do, with a cost estimate), `run(ctx, decision) ->
+artifacts`, `check(artifacts) -> problems`, and flags for whether it needs a GPU, the network or an LLM decision.
+`ctx` is a `StageContext`; it carries the project, the stage's name in the pipeline, the stage's declared inputs and
+two services, a `TrustBackend` (§18.3) and an `AlphaLedger` (§18.5), so a stage reaches sealed data and alpha only
+through them.
+
+- **AN-3 (stage protocol).** A stage that lacks a declared method, declares no input or output schema, or returns an
+  artifact that fails its declared schema is refused; `check` problems are reported in the form of AN-1; `plan` has
+  no side effects and `run` writes only the stage's declared outputs inside the project, under the stage's name in
+  the pipeline (not its type), so two pipeline entries of one stage type keep their records apart; an output written
+  under another stage's name is refused.
+- **AN-5 (idempotent and resumable stages).** Re-running a stage with the same inputs and the same decision
+  produces byte-identical artifacts or refuses; a stage interrupted before its last write is resumed from the
+  records on disk, never from memory; a completed stage whose input hash changed is not skipped.
+
+A **pipeline spec** (YAML) lists stages and how artifacts flow between them; a **scenario pack** (entry-point group
+`gatedtrain.scenarios`) bundles a pipeline spec, templates, data converters and applicable lessons. Users and agents
+customise a project by choosing a pack, overriding stage parameters, replacing a pluggable stage or adding stages,
+always through the pipeline spec and never by editing a trust stage.
+
+**Trust stages** are built into gatedtrain and are not plugins: `intake_seal`, `preregister`, `evaluate_sealed`,
+`gate`, `report`.
+
+- **AN-4 (pipeline trust order).** The stage machine refuses a pipeline spec that omits a trust stage, names a
+  trust stage twice, replaces one with a plugin, or orders them otherwise than: `intake_seal` first;
+  `preregister` before any training stage; `evaluate_sealed` and `gate` after the last training stage, in that
+  order; `report` last; and no pluggable stage between `evaluate_sealed` and `report`.
+
+### 18.3 Trust stages and the `TrustBackend` (AN-6 to AN-10)
+
+All access to sealed items, registrations and the evaluation of the candidate goes through a `TrustBackend`. The
+trust stage `evaluate_sealed` (AN-8) scores the sealed items by calling the backend method `run_sealed`; no other
+stage calls it:
+
+```
+TrustBackend
+  seal(items)                  -> SealedRef    # sealed part stored out of the driver's reach (keeper, step 2; not the step 1 stub)
+  sealed_summary(ref)          -> dict         # n, manifest_sha256, label_counts; never item content
+  run_sealed(ref, generate)    -> list[dict]   # per-item records, never the items
+  register(registration)       -> str          # the registration hash
+  registration(hash)           -> dict
+  latest_registration()        -> str | None   # the hash the last register returned
+  claim_sealed_evaluation(candidate, registration) -> dict   # the project's one sealed evaluation (AN-8)
+  sealed_evaluation()          -> dict | None  # the claim on record
+  sealed_guarantee: str                        # what this backend does and does not guarantee
+```
+
+The backend states in `sealed_guarantee` what it guarantees; reports and `--json` results quote it verbatim. The
+`TrustBackend` of the full design is the keeper daemon (§18.7). **Step 1 ships `InProcessTrust`**, whose
+`sealed_guarantee` is "unsealed (step 1): the operator process can read the sealed items, and every stage can read
+and rewrite the trust records and the attempt log". It splits, hashes and records through this interface, but it
+does not protect the sealed part, the registrations, the ledger or the attempt log from the process that runs the
+stages and does not run the candidate in an isolated container. Signing and verifying records (`sign`, `verify`)
+belong to the step 2 keeper backend and are not part of the step 1 interface. A step 1 result therefore shows the
+rule logic and carries no claim that an adversarial agent could not have read the sealed items or rewritten the
+records; the report of a project run on `InProcessTrust` says so in its known limits.
+
+- **AN-6 (intake and seal).** `intake_seal` runs before any agent or LLM decision sees data contents. It hashes the
+  data, splits it deterministically (seeded by the data hash) into a training part and a sealed part, and passes on
+  only the training part, the sealed manifest hash and size, the label or answer-type distribution and schema-only
+  samples (no item content). Data without a verifiable answer or label per example are refused with the reason.
+  The same data and seed give the same split. When the sealed part is smaller than the registered power plan needs,
+  the stage reports plainly, before any training, that the gate will most likely be INCONCLUSIVE and how many more
+  labelled examples would make it conclusive; margin and alpha are not relaxed. Synthetic examples may enlarge the
+  training part only, are generated from the training part alone, and are counted in the report.
+- **AN-7 (preregister and metric confirmation).** `preregister` writes the registration before training: base model,
+  scenario pack, evaluator and its version, deciding metric and direction, margin, alpha (from the ledger), sealed
+  item-set hash. The base model is recorded in the optional registration field `base_model: {"model_ref_sha256":
+  "sha256:<64 hex>"}` (the hash of the base model reference), with the scenario pack and the generator that serve
+  it; a base model reference that names no generator an installed scenario pack serves is refused here, before
+  anything trains, and `evaluate_sealed` refuses a baseline whose reference hash differs from the registered one.
+  Registrations without the field are unchanged. The metric comes from the scorer library (§18.4); the driver
+  proposes one scorer, a direction and a margin, and nothing trains until the user confirms or changes it. In step 1
+  the confirmation is the decision flag `metric_confirmed` that whoever runs the stage sets; there is no separate
+  channel to the user, and the report lists this in its known limits. After the confirmation any change is an
+  amendment and marks the result `post_hoc` (§3.7); a `post_hoc` result cannot produce a PASS headline. The training
+  reward may differ from the deciding scorer and the report states both.
+- **AN-8 (`evaluate_sealed` isolation).** `evaluate_sealed` feeds the sealed items to the candidate and hands only
+  the per-item records to the scorer; no other output leaves it, so neither the candidate nor agent-written code can
+  carry sealed items out or forge records. A project has one sealed scoring: before it scores any item,
+  `evaluate_sealed` claims it through the backend for the candidate's model reference hash and the registration, and
+  once the claim exists every further scoring is refused, for another candidate and for the same model reference
+  alike, because scoring several trainings on the sealed set and gating the best would select on the test data
+  without spending alpha. A done `evaluate_sealed` whose inputs are unchanged is reused, not run again. A model
+  reference must content-address its weights (for example carry their hash), so that a reference that did not change
+  names the same weights; step 1 does not check this, so after a retrain behind an unchanged reference (a mutable
+  checkpoint path) the gate records may describe weights the reference no longer points to, and the report says so
+  in its known limits. A new test needs new sealed data. Step 1 runs it as a stub through `InProcessTrust` and
+  states, through `sealed_guarantee`, that the isolation is not enforced; the rule is tested on the record flow
+  (records in, no item content out) and on the one-scoring claim, not on isolation.
+- **AN-9 (gate on the sealed records).** `gate` decides on the records `evaluate_sealed` produced and the
+  registration, by the existing gate path (§3); it refuses a registration that was amended after training began
+  unless the result is marked `post_hoc`, a records set whose hash differs from the registered item set, and an
+  attempt for which the `AlphaLedger` refuses (§18.5). Every attempt, including a refused one, is appended to the
+  attempt log (a refused one with its rule and reason); the alpha an attempt was granted is in the `AlphaLedger`'s
+  entries, and a refused attempt spends none.
+- **AN-10 (report from records).** `report` writes from records only: the gate result (PASS, FAIL or INCONCLUSIVE,
+  effect and interval in the metric's units, power), every gate attempt with the alpha spent, every
+  `evaluate_sealed` and gate attempt in the attempt log (refused ones included), and the known limits:
+  `sealed_guarantee`, that the alpha is per project in step 1, that the metric confirmation is the
+  `metric_confirmed` flag, that a model reference must content-address its weights, and the number of
+  `evaluate_sealed` attempts. Step 1: not yet: what was trained, failures and preemptions beyond those attempts,
+  generated text (step 1 generates none: `report.md` is rendered from `report.json` alone, and a rendering that
+  differs is refused) and the rule that a generated summary may quote only numbers present in the records. The
+  deliverable is the model files (the last cut, or the base if nothing passed), a model card and the report; step 1:
+  not yet, it delivers the report only.
+
+### 18.4 Scorer library
+
+The deciding metric comes from a library shipped with gatedtrain, each scorer with a registered code hash: exact
+match, numeric match with tolerance, normalised string match, set and field-level F1 for extraction, volumetric IoU,
+and the scorers of the existing recipes. The gate tests the per-item difference of the candidate's and the base
+model's scores, so for power planning at intake the library supplies, per scorer, a planning standard deviation of
+that paired difference. For `exact_match` it is the bound for two independent 0/1 scores at p = 0.5: each has the
+largest standard deviation of a 0/1 score, 0.5, so the difference has sqrt(0.5^2 * 2) = sqrt(0.5), about 0.71.
+Positively correlated arms have a smaller standard deviation, so the plan does not under-size the sealed part for
+them.
+
+### 18.5 Alpha budget and the `AlphaLedger`
+
+A project owns an alpha wealth and every gate attempt against the sealed set spends from it. The interface is:
+
+```
+AlphaLedger
+  available()                  -> float        # alpha still available
+  spend(attempt_id)            -> float        # alpha granted to this attempt; refuses when none is available
+  record(attempt_id, passed)   -> None         # settles the attempt in the log
+  entries()                    -> list[dict]   # the attempt log
+```
+
+**Step 1 ships `FixedAlphaLedger`:** alpha 0.05 and one attempt. `spend` grants 0.05 to the first gate attempt and
+refuses every later one; `record` only settles the attempt in the log and earns nothing back, and `entries` lists
+every attempt. It guarantees that a project's one sealed test is made at the alpha the ledger grants and nothing
+about repeated testing, because repeated testing is not allowed at all: the gate runs once and `evaluate_sealed`
+scores one candidate per project (AN-8). In step 1 the alpha is per project: a new project on the same data would
+get a fresh alpha and the same sealed split, so its test would not be independent of the first; a new test needs new
+sealed data, and the report says so in its known limits. Keying the budget by the sealed set (or the data hash)
+belongs to the step 2 keeper. The rule that spends and earns wealth over many attempts (an alpha-investing procedure
+or a generalised variant) and its false-discovery guarantee are **step 2, open**; the choice of variant is left to
+the maintainers in that step. Earning alpha back after a rejection belongs to that step 2 ledger and is not part of
+the step 1 interface.
+
+### 18.6 Drivers, budget and checkpoints
+
+A driver (an external agent or a built-in orchestrator) walks the pipeline spec and writes the same project
+records, so a project started by one can be continued by the other. The user approves a GPU-hours and LLM-spend
+budget at the start; inside it the driver needs no approval, and the user is asked only when the budget would be
+exceeded, when the metric is chosen (AN-7, always once), when the data are too small for a conclusive gate (AN-6),
+or when the goal is ambiguous enough that two packs would build different models. For the AI-native path the local
+backend executes jobs itself (the launch rules, the preemption and attempt records, retries within budget), which
+changes the principle that gatedtrain never starts a process for this path only; the `ext-*` commands keep printing
+commands. The drivers and the local backend are not part of step 1.
+
+### 18.7 Open in revision 21
+
+- **Step 2, open:** the keeper daemon (a separate OS user holding the sealed data, registrations, ledger and a signing
+  key, so that the seal holds against an agent with a shell); signatures verified by `report`; the alpha-investing
+  variant, its spending fraction and payout, and its false-discovery guarantee; the scorer library beyond the
+  scorers listed in §18.4.
+- **Later steps:** the local backend and runner on a GPU, the MCP server and orchestrator, the second scenario pack.
+
+### 18.8 Rule index
+
+| Rule | Subject | Section |
+|---|---|---|
+| AN-1 | `--json` result shape | §18.1 |
+| AN-2 | Project store | §18.1 |
+| AN-3 | Stage protocol | §18.2 |
+| AN-4 | Pipeline trust order | §18.2 |
+| AN-5 | Idempotent and resumable stages | §18.2 |
+| AN-6 | Intake and seal | §18.3 |
+| AN-7 | Preregister and metric confirmation | §18.3 |
+| AN-8 | `evaluate_sealed` isolation (stub in step 1) | §18.3 |
+| AN-9 | Gate on the sealed records | §18.3 |
+| AN-10 | Report from records | §18.3 |
+| AN-11 | Project commands | §18.1 |
 
 ## Notes for the overview and sibling documents
 

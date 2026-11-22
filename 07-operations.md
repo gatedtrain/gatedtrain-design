@@ -1,6 +1,6 @@
 # 07. Operations: Services, Reliability, SLOs, and Runbooks
 
-**Status:** The design set is at revision 20; this document's design content was last changed in revision 9. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. This document remains **Direction — detailed review after G0** (R8-20), except that the P2 operations content is normative for the MVP: the P2 rows of §2, §4.8, the P2 chaos tests in §9, and the P2 runbooks in §10. Everything else describes P3 and later. Overview: `design.md`.
+**Status:** The design set is at revision 21; this document's design content was last changed in revision 9. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. This document remains **Direction — detailed review after G0** (R8-20), except that the P2 operations content is normative for the MVP: the P2 rows of §2, §4.8, the P2 chaos tests in §9, and the P2 runbooks in §10. Everything else describes P3 and later. Overview: `design.md`.
 
 **Primary findings:** ARCH-9, OPS-4, OPS-5, OPS-6, OPS-7, FMEA-6, FMEA-7, FMEA-9 (round 1, §14); OPS2-7, OPS2-11, FMEA2-9, and the operational parts of R8-5, R8-6, R8-7, R8-11 (round 2, §15); the operational consequences of R9-1, R9-2, R9-8, and R9-9 (round 3, last section).
 

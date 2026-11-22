@@ -1,6 +1,6 @@
 # 01. Contracts and Algorithms
 
-**Status:** The design set is at revision 20; this document was last changed in revision 9. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in open-issues.md.
+**Status:** The design set is at revision 21; this document was last changed in revision 9. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in open-issues.md.
 
 Revision 9 applies round-3 decisions R9-3, R9-4, R9-7 (research-profile items), and R9-9 (rule-2 wording) from the round-3 review record (not published); revision 8 implemented R8-3, R8-10, R8-12–R8-15. Overview decisions D2–D5 and D15 and the hook list in overview §5 are authoritative; where the overview and the review decisions differ, the decisions win.
 
