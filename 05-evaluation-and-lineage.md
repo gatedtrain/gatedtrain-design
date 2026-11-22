@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 21; this document was last changed in revision 21. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 22; this document was last changed in revision 22. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -476,6 +476,8 @@ Revision 7's rule "a checkpoint at step s consumed shard S iff first_step(S) ≤
 - The ancestry path of a checkpoint in segment e with `last_step_included = s` is: steps ≤ s of segment e, then steps ≤ `branch_step` of each ancestor.
 - **Rollup per lineage.** The workflow database keeps `consumption_rollup(run, controller_epoch, shard, first_step, last_step, rows)` per segment. The checkpoint consumed shard S iff some segment g on its path has first_step(g, S) ≤ u_g, where u_g is s for its own segment and the child's `branch_step` for ancestors.
 - **Superseded and orphaned records.** Records of a parent segment after a branch point are marked `superseded` relative to the child: they remain valid for checkpoints of the parent segment itself and are excluded from descendants. Records not covered by any committed cut (an attempt that ended after its last cut) are `orphaned` and excluded from every rollup. Query results report both: a row-level question gives superseded and orphaned record counts with their precision; a membership question gives superseded and orphaned step ranges per segment and shard.
+
+**External runs (revision 22).** `ext-collect` implements this section for **linear chains** only: attempt A+1 restores the newest committed cut of attempts 1..A, so every segment has one child and a branch step equal to the last cut of its parent. A restore from any other cut, which would branch the tree (a rollback), is refused. Records after a non-final attempt's last committed cut are `orphaned` and excluded from every rollup and impact answer, reported only as orphaned counts and step ranges; kept records cover steps 1..`max_steps` exactly once. Rule ids EXT-RES-1 to EXT-RES-7 (tests/README.md) pin these checks.
 
 ### 12.5 Ledger writer
 

@@ -1,6 +1,6 @@
 # 02. Run Contract and Checkpoints
 
-**Status:** The design set is at revision 21; this document was last changed in revision 11. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. **Parent:** `design.md` (overview), decisions D2 and D6; round-2 decisions R8-4, R8-5, R8-7, and the run-side parts of R8-6, R8-9, R8-15, R8-17, R8-19 (round-2 review record, not published); round-3 decisions R9-2, R9-3, R9-6–R9-9 (round-3 review record, not published).
+**Status:** The design set is at revision 22; this document was last changed in revision 22. A prototype (`gatedtrain` 0.3.0) implements revision 19. Frozen until G0 closes; deferred items in `open-issues.md`. **Parent:** `design.md` (overview), decisions D2 and D6; round-2 decisions R8-4, R8-5, R8-7, and the run-side parts of R8-6, R8-9, R8-15, R8-17, R8-19 (round-2 review record, not published); round-3 decisions R9-2, R9-3, R9-6–R9-9 (round-3 review record, not published).
 
 **Baseline:** NeMo RL `4f39fd8`; verl-omni `3580c1a` (pins verl `fefb080`). Every code fact below cites `file:line` in those clones. Numbers marked *(estimate)* are not measured.
 
@@ -44,6 +44,8 @@ The run has exactly two channels: launch inputs (§2.1) and the contract transpo
 | `adapter_pubkey` | `gatedtrain-runtime-agent`, generated per attempt under the agent's OS user | Ed25519 public key that verifies verbs and the `restore_cut` pointer |
 
 All five are passed as environment variables (the key as a file path) and recorded in every contract file. Nothing in this list changes during an attempt; an adapter restart inside a live attempt reuses the same epoch and key (§2.5). The job-start handshake of P2-full (§5.7) is part of the run contract that package A defines (R9-9, ARCH3-7).
+
+**External runs (revision 22).** A run started by `ext-launch` and collected by `ext-collect` has no scheduler job to name. Its attempts are numbered `A = 1, 2, ...` and the ledger of a new run uses `attempt_id = <run_id>.<A>` and `controller_epoch = A`; the parent of attempt A+1 is `(A, branch_step)` of the cut it restored (05 §12.4).
 
 ### 2.2 Layout and transport
 
