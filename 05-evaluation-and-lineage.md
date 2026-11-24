@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 24; this document was last changed in revision 24. A prototype (`gatedtrain` 0.4.0) implements revision 24 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 25; this document was last changed in revision 25. A prototype (`gatedtrain` 0.4.0) implements revision 24 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -588,14 +588,17 @@ Intersection-union per-timestep checks without Holm and prediction bounds on the
 
 Graded independence tiers and a transfer test replaced the shared-backbone exemption; gates became typed, pre-registered tests; turn-gate bootstraps, the "noise band", and "three seeds" were replaced by multiplicity control, fresh selection subsamples, and TOST with at least five seeds; contamination checks became modality-specific, asymmetric, and persisted; deadline masking was removed; detectors were defined; `data_version` became `data_ref` with a durable ledger; lockfiles gained hardware and resolved hashes; reproducibility became statistical re-execution.
 
-## 18. AI-native projects (revisions 21 and 23)
+## 18. AI-native projects (revisions 21, 23 and 25)
 
 An AI-native project turns one goal and one small labelled dataset into a trained model and a report whose claim is
 decided on data the training side never saw. This section defines the project, the stage protocol, the pipeline spec
 and the trust stages, and fixes the rule ids AN-1 to AN-11 that the tests cite. Revision 23 adds the keeper (§18.9),
 the trust backend that holds the seal against an agent with a shell, with signed records, the alpha-investing rule
-(§18.5) and the scorer library (§18.4), and fixes the rule ids AN-12 to AN-19. It builds on §3 (gates), §6 (evaluator
-tiers) and §12 (records). Everything the AI-native path writes is JSON or JSONL with a schema id.
+(§18.5) and the scorer library (§18.4), and fixes the rule ids AN-12 to AN-19. Revision 25 adds rootless execution,
+the detection of rootful Docker access by the user's account, the local backend that runs the AI-native path's jobs
+and the keeper's inference container (§18.10), and fixes the rule ids AN-20 to AN-25 and EXT-263. It builds on §3
+(gates), §6 (evaluator tiers) and §12 (records). Everything the AI-native path writes is JSON or JSONL with a schema
+id.
 
 ### 18.1 Project, `--json` and the project commands (AN-1, AN-2, AN-11)
 
@@ -729,7 +732,8 @@ adversarial agent could not have read the sealed items or rewritten the records;
   change names the same weights; this is not checked, so after a retrain behind an unchanged reference (a mutable
   checkpoint path) the gate records may describe weights the reference no longer points to, and the report says so in
   its known limits. Under the keeper (§18.9) the keeper alone holds the sealed items, runs the registered generator
-  of an installed scenario pack in its own process, scores, and keeps the per-item records; the driver receives only
+  of an installed scenario pack (a per-item generator in its own process, a batch generator in its inference
+  container, §18.10), scores, and keeps the per-item records; the driver receives only
   each attempt's status (PASS, FAIL, INCONCLUSIVE or MISSING) and the alpha spent and earned, never per-item results, which
   would let an agent hill-climb on the sealed set across attempts. On `InProcessTrust` the ledger is
   `FixedAlphaLedger`, which grants one attempt, so once the claim exists every further scoring is refused, for
@@ -855,19 +859,25 @@ records, so a project started by one can be continued by the other. The user app
 budget at the start; inside it the driver needs no approval, and the user is asked only when the budget would be
 exceeded, when the metric is chosen (AN-7, always once), when the data are too small for a conclusive gate (AN-6),
 or when the goal is ambiguous enough that two packs would build different models. For the AI-native path the local
-backend executes jobs itself (the launch rules, the preemption and attempt records, retries within budget), which
-changes the principle that gatedtrain never starts a process for this path only; the `ext-*` commands keep printing
-commands. The drivers and the local backend are not part of step 1.
+backend executes jobs itself (the launch rules, the preemption and attempt records, retries within budget):
+gatedtrain starts processes on the AI-native path only (the local backend and the keeper's inference container); the
+`ext-*` commands keep printing commands. The budget and the approvals are cooperative, not a guarantee against the
+agent (§18.10). The drivers are not part of step 1; the local backend is defined in revision 25 (§18.10).
 
-### 18.7 Open after revision 23
+### 18.7 Open after revision 25
 
 - **Decided in revision 23 (step 2):** the keeper (§18.9), signed records verified by `report` and `verify` (AN-14),
   the alpha-investing rule and its false-discovery guarantee (§18.5, AN-15), and the scorer library of §18.4 (AN-17).
-- **Later steps:** containers for the sealed evaluation, with the local backend and runner on a GPU (step 3),
-  including how a real scenario pack gives the keeper user read access to model files kept under the user's home (the
-  synthetic pack's inline models need none); the MCP server and the orchestrator (step 4); a hosted keeper; several
-  hosts; installing the keeper as a service on Windows or macOS; key rotation; a second channel for the metric
-  confirmation (AN-18); the second scenario pack.
+- **Decided in revision 25 (step 3a):** rootless Docker for the user and the keeper with the printed host setup
+  (AN-20), the detection of rootful Docker access by the user's account and the downgraded guarantee (AN-21), the
+  launch rules on a rootless host (EXT-263), the local backend with its job records, GPU accounting, budget and retries
+  (AN-22 to AN-24), batch generators run in the keeper's inference container (AN-25), and how model files reach the
+  keeper: a hand-off directory the keeper user can traverse, from which the keeper copies and hashes them (§18.10).
+- **Step 3b:** the text scenario pack, the GPU end to end through `gatedtrain project`, and one recipe smoke re-run
+  under the rootless rules.
+- **Later steps:** the MCP server and the orchestrator (step 4); a hosted keeper; several hosts; installing the
+  keeper as a service on Windows or macOS; key rotation; a second channel for the metric confirmation (AN-18); the
+  second scenario pack.
 
 ### 18.8 Rule index
 
@@ -880,20 +890,27 @@ commands. The drivers and the local backend are not part of step 1.
 | AN-5 | Idempotent and resumable stages | §18.2 |
 | AN-6 | Intake and seal | §18.3 |
 | AN-7 | Preregister and metric confirmation | §18.3 |
-| AN-8 | `evaluate_sealed` isolation; each sealed evaluation spends alpha first (isolation not enforced on `InProcessTrust`) | §18.3 |
-| AN-9 | Gate on the sealed records at alpha_j; a granted attempt always settles | §18.3 |
-| AN-10 | Report from records (built and signed by the keeper) | §18.3 |
+| AN-8 | `evaluate_sealed` isolation; each sealed evaluation spends alpha first (isolation not enforced on `InProcessTrust`); a batch generator runs only in the keeper's inference container | §18.3, §18.9 |
+| AN-9 | Gate on the sealed records at alpha_j; a granted attempt always settles; malformed predictions are a crash | §18.3, §18.9 |
+| AN-10 | Report from records (built and signed by the keeper); the `compute` block | §18.3, §18.9 |
 | AN-11 | Project commands | §18.1 |
 | AN-12 | Keeper protocol and peer credentials | §18.9 |
-| AN-13 | Keeper environment and model file formats | §18.9 |
-| AN-14 | Signed records, the trust anchor and `verify` | §18.9 |
+| AN-13 | Keeper environment and model file formats; the keeper's copy of the model files; the inference environment | §18.9 |
+| AN-14 | Signed records, the trust anchor and `verify` (exit 1 on rootful access) | §18.9 |
 | AN-15 | Alpha-investing ledger | §18.5 |
 | AN-16 | Sealed items tracked one by one; a report closes the sealed set | §18.9 |
 | AN-17 | Scorer library and pack scorers by reference | §18.4 |
 | AN-18 | Metric confirmation record | §18.9 |
-| AN-19 | `setup keeper` prints, never runs | §18.9 |
+| AN-19 | `setup keeper` prints, never runs (with the keeper's inference options) | §18.9 |
+| AN-20 | `setup host` prints one root script and runs nothing | §18.10 |
+| AN-21 | Rootful-access detection and the downgraded guarantee | §18.10 |
+| AN-22 | Local backend jobs: shared launch rules, submit, status, logs, cancel, artifacts, hand-off, job records | §18.10 |
+| AN-23 | GPU accounting, budget, retries, GPU wait and the GPU log row | §18.10 |
+| AN-24 | Stage access to the backend (`ctx.backend`; only `needs: gpu` stages submit GPU jobs) | §18.10 |
+| AN-25 | Batch generators and the keeper's inference container | §18.10 |
+| EXT-263 | The launch rules on a rootless host (`rootless = true`) | §18.10 |
 
-### 18.9 The keeper (revision 23)
+### 18.9 The keeper (revisions 23 and 25)
 
 The keeper makes the seal hold against an agent that runs as the user with a shell: the agent cannot read sealed
 items, cannot edit a registration, claim, ledger entry or gate record without detection, and cannot get sealed
@@ -927,13 +944,31 @@ keeper user. Drivers reach it over a local Unix socket: `KeeperTrust` and `Keepe
   environment record, and it refuses to start when its code or environment can be written by a uid other than its own
   or root, when its state directory is open to other users, or when the socket's directory can be written by a uid
   other than its own or root (that uid could replace the socket and answer drivers in the keeper's place). Model files are read as data only: formats that run
-  code on load (pickle-based checkpoints) are refused, before any alpha is spent.
+  code on load (pickle-based checkpoints) are refused, before any alpha is spent. Revision 25: the allowed model file
+  suffixes are `.safetensors`, `.json`, `.jsonl`, `.txt` and `.jinja` (a chat template, which is text). Before the
+  grant the keeper copies each file a model reference lists (`files`) into its own state: it opens the file without
+  following a link, accepts a regular file only, checks that the opened file is the path it checked and lies outside
+  its state, streams it into a new keeper-only file while hashing, and refuses (AN-13) a hash other than the listed
+  one, two files with one base name, or a file it cannot open (fix: put model files under a directory the keeper user
+  can traverse, such as the hand-off directory of §18.10). The generator, per-item or batch, receives only the copy,
+  so the hash in the claim is the hash of what runs; a refusal there spends nothing, and the copies are removed after
+  the arm is scored, on every other exit path and when the keeper starts. A keeper started with an inference image
+  (§18.10) adds to its environment record the image ID, each eval tree with its file hashes and the Docker CLI's
+  hash, and refuses to start when its daemon reports another ID for the image, when an eval tree holds a node owned by
+  a uid other than root or its own, writable by another uid, or a link that resolves outside the configured eval
+  trees, when the Docker CLI or `nvidia-smi` it calls by absolute path fails the same ownership check, or when its
+  Docker daemon is not rootless or its socket is not owned by the keeper uid under a directory of mode 0700 (it waits
+  up to 60 s for that socket at start, since the keeper user's daemon may start after the keeper).
 - **AN-19 (`setup keeper` prints, never runs).** `gatedtrain setup keeper [--user gatedtrain-keeper]` prints the
   privileged commands (create the keeper user, the state directory and the socket directory, the root-owned virtual
   environment with its pinned installs, and a systemd unit), the check command and the command that prints the
   keeper's key fingerprint for the user to keep out of band (AN-14); the user runs them with sudo once. gatedtrain
   never runs sudo, and `setup` writes nothing. A path holding `%`, `$`, whitespace, a quote or a backslash is refused,
-  since systemd rewrites or splits those in the unit's `ExecStart=`.
+  since systemd rewrites or splits those in the unit's `ExecStart=`. Revision 25: `setup keeper` also takes the
+  keeper's inference options, `--inference-image ID` (`sha256:<64 hex>`), `--eval-tree DIR` (repeatable) and
+  `--docker-host URL`, and prints them into `ExecStart=`; the host script of `setup host` (AN-20) writes the same
+  serve command into a unit drop-in, which also orders the keeper after the keeper user's service manager
+  (`After=` and `Wants=user@<keeper uid>.service`).
 
 **Intake over the socket.** `intake_seal` sends the whole data file over the socket; the keeper splits it (the
 deterministic split of AN-6), stores the sealed part, and returns the training part, the sealed summary and the
@@ -969,11 +1004,27 @@ holds a copy with the signature.
 
 **Sealed evaluation and alpha.** Each sealed evaluation spends alpha first (AN-8): the keeper grants alpha_j (AN-15),
 records and signs the claim (candidate model hash, registration hash, alpha_j), and only then runs the registered
-generator of an installed scenario pack in its own process (revision 23: the synthetic pack; containers come with the
-local backend, §18.7) and scores. A candidate scored on the sealed set without a spend is impossible, because the
-keeper alone holds the items. The per-item records stay in the keeper; the driver receives each attempt's status and
-the alpha spent and earned. The keeper computes the gate at alpha_j by the existing gate path (AN-9), and builds and
-signs the gate record and `report.json` (AN-10); `report.md` is still rendered from `report.json` alone.
+generator of an installed scenario pack and scores: a per-item generator in its own process (revision 23: the
+synthetic pack), a batch generator in its inference container (revision 25, §18.10). A candidate scored on the sealed
+set without a spend is impossible, because the keeper alone holds the items. The per-item records stay in the keeper;
+the driver receives each attempt's status and the alpha spent and earned. The keeper computes the gate at alpha_j by
+the existing gate path (AN-9), and builds and signs the gate record and `report.json` (AN-10); `report.md` is still
+rendered from `report.json` alone. Revision 25 extends three rules for the batch path:
+
+- **AN-8 (extended).** A batch generator's sealed evaluation runs only in the keeper's inference container (AN-25),
+  one container per arm for all registered seeds, and its records equal the per-item form's in shape and order. The
+  in-process path (`InProcessTrust`) refuses a batch generator before its claim, and so does a keeper started without
+  an inference image, before the grant ("this keeper runs no inference container"); neither spends alpha.
+- **AN-9 (extended).** After the grant, an inference container that exits with a non-zero code, runs past its time
+  limit, or leaves its output in any other form than one well-formed predictions file (AN-25) is a crash: the attempt
+  settles as not passed and costs its alpha, and the refusal names counts or the exit code only, never a prediction.
+- **AN-10 (extended).** `report.json` carries a `compute` block: `keeper` (containers, seconds and GPU seconds of this
+  project's sealed evaluations, from the keeper's signed records) and `backend` (jobs, seconds and GPU seconds the
+  driver sends from its job records, with the source "the driver's job records (cooperative, not checked by the
+  keeper)", or null when the driver sends none); `report.md` prints both lines. The keeper's known limits state the
+  guarantee texts below and the model reference limit "a model reference must content-address its weights: the
+  keeper copies the files a reference lists (`files`) into its own state, hashes the copy and runs only the copy, so
+  the hash in the claim is the hash of what ran; weights the reference reaches in any other way are not covered".
 
 **Signatures and the trust anchor.**
 
@@ -996,17 +1047,230 @@ signs the gate record and `report.json` (AN-10); `report.md` is still rendered f
   attempt's claim and grant, and after a retrain the identical request that would return them is never sent. A
   scoring error after the grant that is not a refusal (a failed write) settles the attempt as not passed and returns
   the spend's envelopes, as a refusal does. A record the keeper signed that the project still lacks fails `verify`
-  against the keeper, with a message that names both causes (not received, or deleted).
+  against the keeper, with a message that names both causes (not received, or deleted). Revision 25: `hello` also
+  returns `owner_has_root_docker` and `root_docker_reasons` (AN-21), for the project it names when it names one, and
+  `keeper fingerprint` prints both. `verify` exits 1 with a warning that it checked consistency only, as for
+  `same_user`, when the keeper's `hello` says `owner_has_root_docker` (a `hello` without the field counts as true), and,
+  under any anchor, when `report.json` states the downgraded guarantee or the revision 23 guarantee text, which was
+  stated before rootful access was checked.
 
-**Guarantees.** `KeeperTrust.sealed_guarantee` states: "the sealed items, registrations, claims, ledger and per-item
-records are held by a separate OS user running code the user's account cannot change, and every record is signed; the
-candidate runs inside the keeper process, not in a container (a model format that executes code is refused); the
-original data file and the metric confirmation are only as strong as the user's own account; a root user or the
-keeper's own account can break all of it." When the keeper runs as the owner's own OS user, as in the tests and CI,
-it states instead: "the keeper runs as the owner's own OS user, so anything running as the user can read its state
-and signing key: the records are signed, but nothing is sealed (a test or development setup)". The tests run the
-keeper as a subprocess of the test user; the separate-user property is checked once by hand on a host with a real
-keeper user.
+**Guarantees.** `KeeperTrust.sealed_guarantee` states (revision 25): "the sealed items, registrations, claims, ledger
+and per-item records are held by a separate OS user running code the user's account cannot change, and every record is
+signed; the keeper found no rootful Docker or containerd access by the user's account, nor the account in the docker,
+lxd, incus-admin or disk group, when this was stated or at any earlier check on this sealed set (sudo is not checked);
+a scenario pack's per-item generator runs the candidate inside the keeper process, and a batch generator runs it in a
+container of the keeper's own rootless Docker with no network, a read-only root file system and the predictions as its
+only output; either way the candidate is a copy of the model files the keeper hashed, and a model format that
+executes code is refused; an escape from that container through a bug in the inference code or the kernel gives the
+keeper's account; the original data file and the metric confirmation are only as strong as the user's own account; a
+root user, also one reached through sudo, or the keeper's own account can break all of it." When the rootful-access
+detection (AN-21) is positive now or was at any check on the sealed set, it states instead: "the keeper runs as a
+separate OS user, but the user's account can reach a rootful Docker or containerd daemon or holds a root-equivalent
+group (docker, lxd, incus-admin or disk), or did at a check while this sealed set was in use, and through that can
+read the keeper's state and signing key: the records are signed, but nothing is sealed from the user's account; remove
+the user from those groups, end the sessions that still carry them, and take in new data". When the keeper runs as the
+owner's own OS user, as in the tests and CI, it states instead, whatever the detection says: "the keeper runs as the
+owner's own OS user, so anything running as the user can read its state and signing key: the records are signed, but
+nothing is sealed (a test or development setup)". The revision 23 text, "the sealed items, registrations, claims,
+ledger and per-item records are held by a separate OS user running code the user's account cannot change, and every
+record is signed; the candidate runs inside the keeper process, not in a container (a model format that executes code
+is refused); the original data file and the metric confirmation are only as strong as the user's own account; a root
+user or the keeper's own account can break all of it.", is no longer stated; a report that carries it was signed
+before rootful access was checked, and `verify` exits 1 on it (AN-14). The guarantee is per project: `hello` for a
+project, the intake summary and the report state the text for that project's sealed set, and `hello` without a
+project states the current host state (AN-21). The tests run the keeper as a subprocess of the test user and inject
+the host state the detection reads; the separate-user property, the rootless daemons and the detection on a real host
+are checked once by hand on a host with a real keeper user.
+
+### 18.10 Rootless execution, the local backend and the keeper's container (revision 25)
+
+The separate-user isolation of §18.9 holds only when the user's account cannot reach a rootful container daemon: an
+account in the `docker` group can start a container as root that mounts the keeper's state and reads the sealed items
+and the signing key. Revision 25 therefore runs the user's jobs and the keeper's sealed evaluation on two rootless
+Docker daemons, one per user, removes the user from the `docker` group, and has the keeper check that the user's
+account has no rootful access before it states the separate-user guarantee. On the same hosts the local backend runs
+the AI-native path's jobs itself, under the launch rules `ext-launch` applies, and the keeper runs a scenario pack's
+batch generator in a fixed inference container. gatedtrain starts processes on the AI-native path only (the local
+backend and the keeper's inference container); the `ext-*` commands keep printing commands. CI has no rootless Docker
+and no GPU: the tests use fake container runtimes and an injected view of the host state, and the real daemons are
+checked once by hand.
+
+**Host setup.** The host changes need root, and gatedtrain never runs sudo.
+
+- **AN-20 (`setup host` prints one root script and runs nothing).** `gatedtrain setup host` prints one bash script and
+  the one command that runs it (`sudo bash gatedtrain-host-setup.sh`); the user saves the script, runs it once and
+  deletes it. gatedtrain runs nothing and writes nothing. The script refuses unless it runs as root for the owner uid
+  it was printed for, and refuses before any change when neither `/etc/cdi` nor `/var/run/cdi` holds a CDI
+  specification naming `nvidia.com/gpu` (fix: generate one with `nvidia-ctk cdi generate`). In order it installs
+  `uidmap`; installs `docker-ce-rootless-extras` at the installed `docker-ce` version, without restarting the rootful
+  daemon; adds the AppArmor profile that rootlesskit needs, when absent; gives the owner and the keeper user a
+  subordinate uid and gid range of 65536 each when they have none; creates the keeper user as `setup keeper` does when
+  it is missing, with its home `/var/lib/gatedtrain-keeper-home` (keeper, 0700); creates the data roots
+  `/srv/gatedtrain/docker` (owner, 0700) and `/var/lib/gatedtrain-keeper-docker` (keeper, 0700) on the root disk and
+  the hand-off directory `/srv/gatedtrain/out` (owner, 0755); removes the owner from the `docker` group (after a
+  confirmation pause when asked), before any lingering user manager or rootless daemon starts, since a process started
+  earlier keeps the group; enables lingering for both users; writes each user's daemon configuration (its data root,
+  and Docker's native CDI with the specification directories `/etc/cdi` and `/var/run/cdi`, so the NVIDIA runtime's
+  global `no-cgroups` setting is not touched), installs the rootless daemon as that user and restarts it; and points
+  the owner's Docker context `gatedtrain` at `unix:///run/user/<owner uid>/docker.sock`. With an inference image
+  (`<ref>@sha256:<64 hex>`), the keeper's daemon pulls it, the script checks that the image ID is `sha256:<64 hex>`,
+  and it writes the keeper unit's drop-in with the serve command and the ordering of AN-19. With eval requirements,
+  each pinned with `--hash=sha256:`, it builds the keeper's eval tree (below). The rootful daemons may keep running for
+  root-only use. Closing comments, for the owner without sudo: set `rootless = true` and
+  `output_root = "/srv/gatedtrain/out"` in the host file; end every old session, then restart the owner's service
+  manager (`systemctl restart user@<owner uid>.service`) or reboot, since processes started before the group removal
+  keep the group; pull or build the recipe images again into the owner's rootless store with
+  `docker --context gatedtrain`; and check `gatedtrain keeper fingerprint`. All paths are product defaults and can be
+  changed; a path is refused as in AN-19, and an unpinned image or requirement is refused.
+
+**Rootful-access detection.**
+
+- **AN-21 (rootful-access detection and the downgraded guarantee).** The keeper downgrades its guarantee to the text
+  of §18.9 when any of these holds for the owner uid: the owner is in a group named `docker`, `lxd`, `incus-admin` or
+  `disk`, or in the group of a rootful Docker or containerd socket (owned by root; the sockets of `DOCKER_SOCKET_GLOBS`
+  and of containerd), by `/etc/group`, by its primary gid in `/etc/passwd` or by the group list the system's name
+  service returns (`getgrouplist`); a live process of the owner carries such a gid (`Groups:` in `/proc/<pid>/status`,
+  so old sessions count until they end); such a socket is world-writable; or a Docker TCP endpoint listens on port 2375
+  or 2376 (`/proc/net/tcp` and `/proc/net/tcp6`). It fails closed, counting as positive with a reason, when
+  `/etc/group` or `/proc` cannot be read, when `/proc` is mounted with `hidepid`, or when a process's status cannot be
+  read for any reason but its end. Reasons name uids, gids, pids with their command names and paths only. The keeper
+  checks at `hello` and at intake, evaluate, gate and report; a positive check on a sealed set is recorded once for that
+  set (first time and reasons) and stays: `hello` for a project, the intake summary and the report of that set state the
+  downgraded text from then on, also after the access ends, while `hello` without a project and `keeper fingerprint`
+  report the current state. `verify` exits 1 on it (AN-14). Not detected, and so not covered by the guarantee: root
+  through `sudo`, which is password-gated and named in the guarantee text; a rootful daemon on a socket or port other
+  than those listed; other container or virtualisation daemons. The owner's `adm` group (journal access) does not reach
+  sealed items: the keeper never logs item content and its containers run with `--log-driver none`.
+
+**Launch rules on a rootless host.** Under a rootless daemon the container's root is the daemon's user on the host and
+any other container uid is a subordinate uid. The local backend and `ext-launch` share one variant of the launch rules.
+
+- **EXT-263 (the launch rules on a rootless host).** The host file key `rootless = true` (a TOML boolean; any other
+  value is refused, EXT-HOST; no environment override) switches the user rule: the container runs as `0:0`, which is
+  the owner on the host, with `--cap-drop ALL` and `no-new-privileges` as before; the output directory, and a
+  sidecar's spool, must be owned by the owner; the owner's primary group must not own a rootful Docker socket (container
+  gid 0 is that group), where the owner's own rootless socket under `/run/user/<owner uid>/` is ignored; and the GPU
+  options are `--device nvidia.com/gpu=all` (Docker's native CDI) instead of `--runtime=nvidia --gpus all`. The launch
+  record carries `"rootless": true`, and a record written under the other setting is refused; the host configuration
+  hash includes the key only when it is true. Every other EXT rule is unchanged. Without the key the rootful rules
+  hold as before, and every printed command, configuration hash and label stays the same. `ext-launch` only prints:
+  the printed command must use the context `gatedtrain` (`docs/gpu-step.md`), and `--recheck` checks, without
+  starting a process, that the context's socket is owned by the owner. The backend checks the daemon itself (AN-22).
+
+**The local backend.** `LocalBackend` runs one project's jobs on the owner's rootless daemon (context `gatedtrain`).
+A `Job` holds a label (a plain name of at most 64 characters), the ext adapter whose launch rules apply and its
+profile (default `full`), the runtime (an image pinned by digest, or such an image with a locked virtual environment),
+the framework, the argv, the environment (names allowed by the adapter), read-only input mounts, one output
+directory with its container path, tmpfs paths, the network (`none` by default), a GPU flag, a time limit (default
+21600 s), a GPU-hour estimate, a training seed and the number of attempts (default 3). Its key is the sha256 of its
+canonical JSON.
+
+- **AN-22 (local backend jobs).** `submit` first looks for a job of the project with the same key: when one is queued,
+  running or succeeded, it returns that job's id after checking its stored record against the launch rules (without the
+  fresh-output rule) and starts nothing, so a stage re-run after the driver died reattaches to its running job. A new
+  job is refused, before anything starts and with the EXT message kept (field `job.<field>`), when it fails the rules
+  `ext-launch` applies to a request (isolation, bind arguments, the adapter's launch and argv rules, with the adapter's
+  run options applied as `ext-launch` prints them), names an unknown adapter, is a GPU job without a positive estimate,
+  or has a time limit or attempt count below 1; the backend needs the host layout (EXT-HOST). Under `rootless = true` it
+  refuses before any start when its daemon is not rootless or the daemon's socket is not owned by the owner. Each job
+  has a record `jobs/<seq>-<label>/job.json` in the project (the job with environment names only, the stage, the
+  rootless setting, the host configuration hash, the script and interpreter hashes and the docker argument list with
+  values replaced by names) and an attempt log `attempts.jsonl` with rows `start`, `end` (outcome, rc, start and finish
+  times, seconds, GPU seconds), `cancel_requested`, `stop` (reason) and `refused` (rule and reason). Containers run
+  detached, named `gatedtrain-<project id prefix>-<job id>-a<attempt>` and labelled with the project and the job, never
+  pull an image (an image the daemon does not hold is refused) and are not removed by Docker on exit. Each attempt
+  writes into a fresh directory `<output dir>/a<attempt>` (owner, 0755) mounted at the job's output path, so a retry
+  never sees an earlier attempt's files. `status` inspects the current attempt; for a stopped container it records the
+  `end` row once (under a lock on the job, so two drivers polling at once record it once), saves the tail of its log (at
+  most 10 MiB) and removes the container. A container the daemon does not list is `lost`; a daemon error leaves the
+  job's state unchanged. Outcomes: rc 0 `ok`; killed for memory `oom`; after a cancel request `cancelled`; stopped at
+  the time limit `timed_out`; stopped at the budget `budget_exhausted`; rc 137 or 143 otherwise `preempted`; any other
+  rc `failed`. Job states are `queued`, `running`, `succeeded`, `failed`, `cancelled`, `timed_out` and
+  `budget_exhausted`. `logs` returns the log, `cancel` records the request and stops the container, and the job list
+  reads the records only. `new_output_dir(name)` creates `<output_root>/gatedtrain-<project id prefix>/<name>` (owner,
+  0755) and returns it again for the same project when it exists as a plain owner-owned directory the project created;
+  otherwise it is refused. `artifacts` lists the succeeded attempt's files (path, size, sha256) and refuses a link or a
+  non-regular file; `hand_off` returns the path and sha256 of the model files a model reference will list, and refuses a
+  path outside the succeeded attempt's directory, a link, a non-regular file, a file without `o+r` or a directory
+  between the output root and the file without `o+x`, since the keeper user must read it. Environment values are never
+  recorded or printed.
+- **AN-23 (GPU accounting, budget, retries, GPU wait and the GPU log row).** An attempt's GPU seconds are its
+  container's run time for a GPU job and 0 for a CPU job. The committed GPU time is the GPU seconds the project's job
+  records hold plus the estimates of its other queued or running GPU jobs. Every attempt start of a GPU job, the first
+  and each retry, is refused when the committed time plus the job's estimate exceeds the project's `budget.gpu_hours`; a
+  retry refused so ends the job `budget_exhausted` with a `refused` row. A running attempt is stopped at its time limit,
+  and a GPU attempt also when it has used the budget left when it started, whichever comes first, while the driver polls
+  (a `stop` row with the reason `timed_out` or `budget_exhausted`). Before each GPU attempt starts, the backend waits
+  until the GPU memory held by compute processes (`nvidia-smi`) is at most 1024 MiB, polling every 10 s for at most 900
+  s; a reading that is not a number counts as busy, a GPU job on a host without `nvidia-smi` is refused, and a GPU still
+  busy at the bound refuses the start (no `start` row). An attempt that ends `failed`, `preempted` or `lost` is retried
+  while attempts remain; `timed_out`, `budget_exhausted`, `oom` and `cancelled` end the job; the retry starts under the
+  same lock as the `end` row. On every terminal state one row is appended to the host's GPU log `<host_work>/gpu-log.md`
+  in the format of `docs/gpu-step.md` (the job and its attempts, first start, last finish, GPU-hours, running total,
+  state and rc), for CPU jobs too; when the file is absent its header and first row are written at once with a running
+  total starting at 0, and an existing file that does not parse is refused, never reset. The row is appended without
+  following a link, under the job's lock.
+- **AN-24 (stage access to the backend).** A pack stage reaches the backend through `ctx.backend`; trust stages get
+  none. Only a stage that declares `needs: gpu` submits GPU jobs; another stage's GPU job is refused. `plan` has no
+  side effects, so a stage's `plan` cannot submit a job or create an output directory. A stage that submitted a job and
+  then refused counts as `failed`, not `refused`, since the job's records are side effects. The backend is built when
+  first used, so a pipeline that submits nothing needs no host layout and no Docker. `gatedtrain project job list`,
+  `logs` and `cancel` give the job states, a job's log and a cancel in the AN-1 shape; `list` reads the records only.
+
+**Batch generators and the keeper's inference container.** A scenario pack declares a batch generator as data, so no
+pack code decides the container's options inside the keeper; gatedtrain implements the call that runs it.
+
+- **AN-25 (batch generators and the keeper's inference container).** A batch generator names a script (a file of the
+  pack's installed distribution), the interpreter that runs it (a container path: the image's own or one inside the
+  keeper's eval trees), whether it needs the GPU and the eval trees, and a time limit (default 1200 s); a name that is
+  both a per-item and a batch generator, or is declared by two packs, is refused. The container sees the sealed items
+  at `/in/items.jsonl` (one canonical JSON line `{"item_id", "input"}` per item, never a label, written to a new
+  keeper-only file), the sampler and the registered seeds at `/in/sampler.json`, the keeper's copy of the model files
+  at `/in/model` (AN-13), the script at `/gen/<name>`, and one empty keeper-owned output directory at `/out`; every
+  mount but `/out` is read-only, and nothing about the items is passed in the arguments or the environment. The keeper
+  runs one container per arm on its own rootless daemon, whose socket lies under the keeper's runtime directory (mode
+  0700) out of the user's reach: the image by the ID its environment record holds, `--user 0:0 --cap-drop ALL
+  --security-opt no-new-privileges --read-only --network none --log-driver none` with Docker's default seccomp
+  profile, a tmpfs `/tmp`, a fixed environment that keeps the inference libraries offline, no image pull, and the
+  GPU through `--device nvidia.com/gpu=all` when the generator needs it. Container root is the keeper uid on the
+  host, so a container escape through a bug in the inference code or the kernel gives the keeper account, and the
+  guarantee says so; a subordinate uid is not used, since the sealed file would then have to be readable by a uid
+  range the keeper does not control exclusively. Before the grant, so that a refusal spends nothing, the keeper checks
+  that the image ID is unchanged and the script is a file of a distribution in its environment record (AN-13), that
+  eval trees are configured when the generator needs them, that the generator's time limit fits the driver's wait for
+  an evaluation (the GPU wait, two time limits and 600 s), and, for a GPU generator, waits for the GPU as the backend
+  does (AN-23) and refuses when it stays busy. After the run, `/out` must hold exactly one regular file,
+  `predictions.jsonl`, of at most 256 MiB, with one canonical JSON line (RFC 8785, as gatedtrain encodes it) with the
+  keys `item_id`, `seed` and `prediction` for each item and seed; a pack script that writes with a standard JSON
+  library keeps predictions to strings, integers, booleans and null, whose encoding is canonical. Anything else is a
+  crash (AN-9). The keeper removes the container and its run directory on every path, and at start removes leftovers
+  of both. Each container's image ID, run time, GPU time and exit code enter the attempt's signed records and the
+  report's `compute` block (AN-10).
+
+**The keeper's inference environment.** The recipe's inference code runs from a virtual environment inside a public
+CUDA base image without Python. An environment or image the user built would let the agent change the inference
+code, so the keeper's is root-owned: the tree `/opt/gatedtrain-keeper` holds a CPython installed by uv
+(`/opt/gatedtrain-keeper/python`) and the virtual environment `/opt/gatedtrain-keeper/eval-venv` built from it with
+the pack's hash-pinned requirements (the PyPI hashes are the integrity anchor), both built by the host script. Links
+may point anywhere inside the configured eval trees and nowhere else. The tree is mounted read-only at the same path
+in the container. The base image is pulled by digest by the keeper's own daemon at setup, and the keeper refuses
+another image ID. The eval trees' file hashes and the image ID are in the keeper's environment record (AN-13).
+
+**Model hand-off.** Model files reach the keeper through a hand-off directory the keeper user can traverse: the
+`output_root` of the host file points at `/srv/gatedtrain/out` (owner, 0755, outside the owner's home, which other
+users cannot enter), the backend's `hand_off` checks that the keeper can read each file (AN-22), and the keeper copies
+and hashes the files and runs only the copy (AN-13), so the owner changing a file after the check changes nothing the
+keeper runs. The owner's and the keeper's image stores and data roots are on the root disk.
+
+**The GPU on one host.** The keeper and the backend each wait (bounded) until no other process holds GPU memory above
+the threshold before they start a GPU container; the pipeline is sequential, so they do not race in the normal flow.
+The owner's GPU guard sees the owner's rootless containers through the context `gatedtrain`.
+
+**Budget and approvals are cooperative.** They are not a guarantee against the agent: the owner's account, and so the
+agent, can run its own rootless containers and edit its own records. The backend's GPU budget stops honest overruns,
+and the report states the backend's GPU time from the backend's records, marked as the driver's. "Each GPU job
+approved by the user" is a rule of a hand-run end to end, not a mechanism. The keeper's sealed-evaluation GPU time is
+in the keeper's signed records and shown in the report; the owner's GPU log gets the backend's jobs only.
 
 ## Notes for the overview and sibling documents
 
