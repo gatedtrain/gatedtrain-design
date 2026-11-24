@@ -1,6 +1,7 @@
 # gatedtrain-design
 
-The design documents behind [gatedtrain](https://github.com/gatedtrain/gatedtrain). gatedtrain calls a newly trained
+The design documents behind [gatedtrain](https://github.com/gatedtrain/gatedtrain), a composable post-training
+framework. gatedtrain calls a newly trained
 checkpoint better only when it beats a criterion registered before training, on test data the trainer never saw,
 and records which data each training run read. This repository explains how a full framework built on that idea
 would work, and why: contracts, run and checkpoint protocol, control plane, workflow and gates, evaluation statistics
