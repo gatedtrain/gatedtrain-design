@@ -1,6 +1,6 @@
 # 02. Run Contract and Checkpoints
 
-**Status:** The design set is at revision 25; this document was last changed in revision 22. A prototype (`gatedtrain` 0.4.0) implements revision 24 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. **Parent:** `design.md` (overview), decisions D2 and D6; round-2 decisions R8-4, R8-5, R8-7, and the run-side parts of R8-6, R8-9, R8-15, R8-17, R8-19 (round-2 review record, not published); round-3 decisions R9-2, R9-3, R9-6–R9-9 (round-3 review record, not published).
+**Status:** The design set is at revision 25; this document was last changed in revision 22. A prototype (`gatedtrain` 0.5.0) implements revision 25 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. **Parent:** `design.md` (overview), decisions D2 and D6; round-2 decisions R8-4, R8-5, R8-7, and the run-side parts of R8-6, R8-9, R8-15, R8-17, R8-19 (round-2 review record, not published); round-3 decisions R9-2, R9-3, R9-6–R9-9 (round-3 review record, not published).
 
 **Baseline:** NeMo RL `4f39fd8`; verl-omni `3580c1a` (pins verl `fefb080`). Every code fact below cites `file:line` in those clones. Numbers marked *(estimate)* are not measured.
 
