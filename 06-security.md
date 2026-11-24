@@ -1,6 +1,6 @@
 # 06. Security, Governance, and Safety
 
-**Status:** The design set is at revision 24; this document was last changed in revision 12. A prototype (`gatedtrain` 0.4.0) implements revision 24 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. MVP controls (phases P0–P2: the §4 items with those phases, §5, §7, §8, §15, and the P0–P2 rows of §16) are normative. Controls that first apply in P3 or later remain **Direction — detailed review after G0** (R8-20) and are marked "(Direction)".
+**Status:** The design set is at revision 25; this document was last changed in revision 25. A prototype (`gatedtrain` 0.4.0) implements revision 24 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. MVP controls (phases P0–P2: the §4 items with those phases, §5, §7, §8, §15, and the P0–P2 rows of §16) are normative. Controls that first apply in P3 or later remain **Direction — detailed review after G0** (R8-20) and are marked "(Direction)".
 
 **Revision:** 9 (2026-11-05). Sub-design of `design.md` (the overview). Resolves round-1 (GOV-1–8, RT-1–8, EMB-9 safety parts), round-2 (RT2-*, GOV2-*, EMB2-2, EMB2-4 watchdog and interlocks), and the MVP security findings of round 3 (round-3 review record, not published: R9-7, with R9-2 and R9-9). Constraint-cost, `intervened`, and `proposed_action` step fields are defined in 01.
 
@@ -158,6 +158,10 @@ Unchanged from revision 7. Sybil labelers and coordinated poisoning are met by v
 | Repudiation | Unattributed bench session | Per-session safety-officer approval recorded (§14.5) |
 | Denial of service | Framework or store outage leaves actuators running | Local watchdog safe-stops immediately on heartbeat loss; hardware emergency stop independent of the framework (§14.5) |
 | Elevation of privilege | A research or standalone fused run reaches a bench | `safety_critical` admission refuses them (B28, §14.4) |
+
+### 3.12 AI-native projects: the user's account and the keeper (05 §18.9, §18.10; revision 25)
+
+On the AI-native path an agent runs with the user's account and a shell, and the keeper, a daemon under its own OS user, holds the sealed items and the signing key (05 §18.9). That separation holds only while the user's account cannot reach a root-equivalent facility: an account that can reach a rootful Docker or containerd daemon, or is in the `docker`, `lxd`, `incus-admin` or `disk` group, can read the keeper's state and key. The keeper therefore checks the user's account for such access (05 §18.10, AN-21), failing closed when it cannot read the host state; when the check is positive, now or at any earlier check on a sealed set, the keeper states a downgraded guarantee that seals nothing from the user's account, keeps it for that set after the access ends, and `verify` exits 1 on it. Root through `sudo` is not detected, and the guarantee says so. The user's jobs and the keeper's sealed evaluation run on two rootless Docker daemons, one per user, so the user's containers map to the user's own uids and the keeper's daemon socket is out of the user's reach. The keeper's inference container runs the candidate as container root, which is the keeper uid on the host, with no network, no capabilities and a read-only root file system: an escape from it through a bug in the inference code or the kernel gives the keeper's account, and with it every sealed set and the key, and the keeper's guarantee states this.
 
 ## 4. MVP baseline
 
