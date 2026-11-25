@@ -1,6 +1,6 @@
 # 08. Families, Execution Modes, and Performance
 
-**Status:** The design set is at revision 26; this document was last changed in revision 12. A prototype (`gatedtrain` 0.5.0) implements revision 25 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in open-issues.md. Revision 9 applies R9-5's P1b throughput baseline (PERF3-1) and the PERF3-5 wording from the round-3 review (record not published).
+**Status:** The design set is at revision 26; this document was last changed in revision 12. A prototype (`gatedtrain` 0.6.0) implements revision 26 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in open-issues.md. Revision 9 applies R9-5's P1b throughput baseline (PERF3-1) and the PERF3-5 wording from the round-3 review (record not published).
 
 **Parent:** `design.md` (the overview). Decisions D12 (fused vectorized mode is first-class) and D16 (per-stage, per-iteration, and per-checkpoint targets) are specified here. Revision 8 implements the execution and placement parts of R8-13 and all of R8-15 from the round-2 review (record not published).
 
