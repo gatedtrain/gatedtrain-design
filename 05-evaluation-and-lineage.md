@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 25; this document was last changed in revision 25. A prototype (`gatedtrain` 0.5.0) implements revision 25 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 26; this document was last changed in revision 26. A prototype (`gatedtrain` 0.5.0) implements revision 25 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -111,6 +111,7 @@ An item is the evaluation unit of the family: a prompt (LLM, VLM, image, video, 
 - **Paired.** Baseline and candidate are evaluated on the same items, with K samples per item and the same evaluation noise seeds (common random numbers). Pairing removes item difficulty from Δ.
 - **Two units of analysis.** A gate on a fixed checkpoint treats the item as the unit (K samples averaged per item, items resampled). A claim about a recipe or an implementation treats the training seed as the unit, because seed-to-seed variance of RL runs dominates evaluation noise; items are nested within seeds (§4). **Training-seed unit (revision 20).** With `unit: training_seed` the candidate arm is S runs of one recipe that differ only in the training seed, each evaluated on the registered items with the registered K and evaluation seeds; the baseline arm is either one fixed checkpoint (for example the base model, evaluated once) or S_b runs of a reference recipe. The registration lists the training seeds before any run: `training_seeds` for the candidate arm and, for baseline runs, `baseline_training_seeds`; a run is matched to its seed by the training seed its launch record states, a run whose seed is not registered is refused, and a registered seed without a usable run is a missing run, which makes the clause MISSING (no run may be left out after the fact). Each run r has a seed-level score y_r: the mean, over the registered items present in every run of both arms, of the item's mean over its repeats (for a ratio metric, the run's ratio over those items). The clause field `seed_analysis` chooses the analysis. `seed_t` (the default) is §4.2's test on the y_r: with a fixed baseline, a one-sample `t` on d_r = y_r − y_base (the baseline scored on the same items), df = S − 1; with baseline runs, Welch's `t` on the two sets of y_r, or a paired `t` on the per-seed differences when the registration sets `seed_pairing: paired` (both arms run the same training seeds with the same initial noise and data order; pairs are matched by seed). `two_stage_bootstrap` resamples runs with replacement within each arm and then items with replacement within each drawn run (with a fixed baseline the item draw of a candidate run is applied to the baseline's item scores, so each difference stays paired; with `seed_pairing: paired` the pairs of runs, matched by training seed, are resampled together and both runs of a drawn pair share one item draw), 10,000 replicates seeded by the clause seed, with percentile bounds (§3.4); BCa is not used, since its acceleration has no two-stage jackknife here. Both analyses report each run's y_r with its item-clustered interval (evaluation noise only) and the between-seed standard deviation s_seed of the y_r (of the d_r with a fixed baseline or paired runs).
 - **Variance from raw scores.** Variance is computed on raw per-item paired differences, never on group-normalized scores or advantages, which remove the item component and shrink the apparent variance (RES-6). Generative-model gates run under the deployment sampler recorded in the checkpoint (02); training-sampler scores are reported but do not decide.
+- **Greedy decoding (revision 26).** A registration may use greedy decoding (`sampler.decoding: greedy`, temperature 0, §3.7) on a path that runs the determinism check of AN-26. Greedy decoding repeats one sample under every seed, so the registration has one evaluation seed and one sample per item; the unit is still the item, `n` counts items, and the interval, power plan and alpha-investing are those of the sampled case with K = 1 (the planning SD bound of §18.4 covers a 0/1 score). The estimand is the greedy decoder's score on the item population, not an expected score under sampling, and the two are never compared across registrations.
 - **Evaluated model.** Evaluation records name the evaluated checkpoint's `model_manifest_hash` (§11), which covers normalizer statistics (08 §6.2); a mismatch with the gate's pinned checkpoint is MISSING (§3.8).
 
 ### 3.4 Intervals and tests
@@ -908,6 +909,7 @@ agent (§18.10). The drivers are not part of step 1; the local backend is define
 | AN-23 | GPU accounting, budget, retries, GPU wait and the GPU log row | §18.10 |
 | AN-24 | Stage access to the backend (`ctx.backend`; only `needs: gpu` stages submit GPU jobs) | §18.10 |
 | AN-25 | Batch generators and the keeper's inference container | §18.10 |
+| AN-26 | Greedy decoding: the control-seed determinism check | §18.10 |
 | EXT-263 | The launch rules on a rootless host (`rootless = true`) | §18.10 |
 
 ### 18.9 The keeper (revisions 23 and 25)
@@ -1246,6 +1248,25 @@ pack code decides the container's options inside the keeper; gatedtrain implemen
   crash (AN-9). The keeper removes the container and its run directory on every path, and at start removes leftovers
   of both. Each container's image ID, run time, GPU time and exit code enter the attempt's signed records and the
   report's `compute` block (AN-10).
+
+- **AN-26 (greedy decoding and the control seed; revision 26).** A registration with `sampler.decoding: greedy`
+  (temperature exactly 0, `top_p` absent or 1, one `eval_seed`, `samples_per_item` 1, one clause) is accepted only by
+  a path that runs this check (the AI-native `preregister` and the keeper's `register`); `check_contents` refuses it
+  elsewhere, and refuses temperature 0 without the switch, the switch with another temperature, several seeds and
+  several clauses (`REG-GREEDY`). For such a registration, `evaluate_sealed` (the keeper and the in-process path)
+  generates every sealed item under the registered seed and once more under a control seed: an integer the
+  registration does not name, drawn by the keeper for each arm and attempt from the system's random source, which the
+  generator is given only in the same `/in/sampler.json` as the registered seed, listed first or second at random, so
+  that it cannot tell the two apart; a batch generator gets both seeds in its one container call. The keeper compares
+  the two sets of predictions itself, as the typed JSON values it read from `predictions.jsonl` (`1` and `1.0` differ),
+  and takes nothing about determinism from the container. Any difference, or a prediction that is not a JSON value,
+  refuses with `AN-26` after the grant: the attempt settles as not passed and costs its alpha, like a crash (AN-9),
+  because whether the predictions differ is a bit about the sealed items. The refusal states no count and no
+  prediction. Only the registered seed's predictions are scored. Repeating the run under the same seed would not
+  show greedy decoding, since seeded sampling repeats as well. Known limits: a decoder that samples is caught only
+  where its samples differ (a set on which every output agrees under any seed is, for that set, greedy); the control
+  pass runs in the same process as the registered pass, so differences between processes are not seen; a generator
+  that is not repeatable on its hardware (batch composition, prefix caching, reduction order) fails closed.
 
 **The keeper's inference environment.** The recipe's inference code runs from a virtual environment inside a public
 CUDA base image without Python. An environment or image the user built would let the agent change the inference
