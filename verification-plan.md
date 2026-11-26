@@ -1,6 +1,6 @@
 # gatedtrain: Verification Plan
 
-**Status:** Companion document, **not part of the frozen design**; the design set is at revision 27, and this plan was last changed in revision 12. A prototype (`gatedtrain` 0.7.0) implements revision 27 except the training-seed unit of revision 20 (05 §3.3). This plan changes no decision in `design.md`, 01–08, or `open-issues.md`. Where it finds a gap that needs a design decision, it proposes an entry in Appendix A; it does not edit `open-issues.md`.
+**Status:** Companion document, **not part of the frozen design**; the design set is at revision 28, and this plan was last changed in revision 12. The prototype (`gatedtrain` 0.7.0) implements revision 27 except the training-seed unit of revision 20 (05 §3.3); revision 28 is implemented on a development branch of it and is not yet in a release. This plan changes no decision in `design.md`, 01–08, or `open-issues.md`. Where it finds a gap that needs a design decision, it proposes an entry in Appendix A; it does not edit `open-issues.md`.
 
 **Owner:** the P0 maintainer (role). **Revision:** draft 1 (2026-11-05), written against design revision 9. Amended 2026-11-05 only to register the test IDs cited by the project's implementation plan (not published), revisions 2 to 4.1 (§4.6), to state the P2-min simulation subset explicitly (§3.4), and to state the P1 scope of SEC-B3 (§4.4).
 
