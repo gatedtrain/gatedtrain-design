@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 27; this document was last changed in revision 27. A prototype (`gatedtrain` 0.7.0) implements revision 27 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 28; this document was last changed in revision 28. The prototype (`gatedtrain` 0.7.0) implements revision 27 except the training-seed unit of revision 20 (05 §3.3); revision 28 is implemented on a development branch of it and is not yet in a release. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -589,7 +589,7 @@ Intersection-union per-timestep checks without Holm and prediction bounds on the
 
 Graded independence tiers and a transfer test replaced the shared-backbone exemption; gates became typed, pre-registered tests; turn-gate bootstraps, the "noise band", and "three seeds" were replaced by multiplicity control, fresh selection subsamples, and TOST with at least five seeds; contamination checks became modality-specific, asymmetric, and persisted; deadline masking was removed; detectors were defined; `data_version` became `data_ref` with a durable ledger; lockfiles gained hardware and resolved hashes; reproducibility became statistical re-execution.
 
-## 18. AI-native projects (revisions 21, 23, 25 and 27)
+## 18. AI-native projects (revisions 21, 23, 25, 27 and 28)
 
 An AI-native project turns one goal and one small labelled dataset into a trained model and a report whose claim is
 decided on data the training side never saw. This section defines the project, the stage protocol, the pipeline spec
@@ -929,10 +929,12 @@ agent (§18.10). The drivers are not part of step 1; the local backend is define
 | AN-32 | `setup check`: the outside prerequisites, read-only, each with its owner and fix | §18.9 |
 | AN-33 | `setup check` exit codes and output | §18.9 |
 | AN-34 | The setup layout file: schema, precedence, the recorded source of each value, refusals (including non-printable characters) | §18.9 |
+| AN-35 | The keeper's owner-side options (GPU wait, busy threshold, eval interpreter), recorded in the signed environment record | §18.9 |
 | IMG-1 to IMG-4 | The image lock and the owner's image config: schema, validation, trust of the file, precedence, no widening from the environment | §18.11 |
 | IMG-5, IMG-6 | `gatedtrain image list`, `check` and `add` | §18.11 |
 | IMG-7 to IMG-9 | Image provenance in the report, the keeper's own check, and `verify` | §18.11 |
 | EXT-263 | The launch rules on a rootless host (`rootless = true`) | §18.10 |
+| EXT-264 | The host file's owner-side settings (smoke GPU-memory bound, GPU-hour ceiling, layout keys, pack tables), bound by the host configuration hash | §18.10 |
 
 ### 18.9 The keeper (revisions 23, 25 and 27)
 
@@ -1109,8 +1111,21 @@ keeper user. Drivers reach it over a local Unix socket: `KeeperTrust` and `Keepe
   environment's own command, only name another. Precedence is an explicit flag, then the file, then the built-in default; the printed commands start with the
   file's path and the SHA-256 of the bytes read and name the source of each value that is not a default, and the JSON
   `data.layout` records the same. The file is printed input: nothing is written, the keeper never reads it, and no
-  environment variable or default location names it. Keys for options the keeper does not have yet (`[gpu]`) are
-  reserved and refused with that message.
+  environment variable or default location names it. A key for an option the keeper does not have is reserved and refused
+  with that message; since revision 28 none is (AN-35).
+
+- **AN-35 (the keeper's owner-side options; revision 28).** `keeper serve` and `setup keeper` accept `--gpu-wait-s S` (how
+  long a GPU generator waits for a free GPU before it is refused; default 900 s; at most the client's deadline less the
+  slack, refused when set above it, and a wait above the default shortens the time limit a generator may declare), `--gpu-busy-mib MIB` (the GPU memory in use
+  that still counts as free; default 1024 MiB; at most 1 TiB, a bound against absurd values: a threshold above the GPU's
+  memory still turns the check off, which is why a non-default value is signed) and `--eval-python
+  PATH` (the eval venv's interpreter that replaces the one a scenario pack declares for a generator that runs from the eval
+  trees; it must still lie inside a configured eval tree). All need `--inference-image`; none is set by a request or a
+  file the project owns. A value that differs from the default is part of the keeper's signed environment record
+  (`inference.gpu`, `inference.eval_python`), whose hash a report names; with the defaults the record is unchanged. The
+  check that a generator's time limit fits the client's wait (AN-25) uses the configured wait, and refuses before the grant
+  when the wait plus two time limits and the slack exceed the client's timeout. The three rows of AN-34 that earlier
+  revisions reserved are these options' layout keys.
 
 **Intake over the socket.** `intake_seal` sends the whole data file over the socket; the keeper splits it (the
 deterministic split of AN-6), stores the sealed part, and returns the training part, the sealed summary and the
@@ -1335,6 +1350,17 @@ checked once by hand.
 
 **Launch rules on a rootless host.** Under a rootless daemon the container's root is the daemon's user on the host and
 any other container uid is a subordinate uid. The local backend and `ext-launch` share one variant of the launch rules.
+
+- **EXT-264 (the host file's owner-side settings; revision 28).** Besides `host_work`, `output_root` and `rootless`, the host
+  file takes `gpu_mem_limit_gb` (the smoke GPU-memory bound in GB; default 22.5) and `gpu_cap_h` (the GPU-hour ceiling passed to
+  `gpu-step.sh`; default 1000), each a finite number above 0 (any other value is refused, EXT-HOST); `input_roots`,
+  `interpreter_trees`, `interpreter` and `mirror_root`, which the `GATEDTRAIN_EXT_*` variables used to set (the variables
+  still override the file, print a deprecation line naming the key, and are removed in a later release); and
+  `[packs.<name>]` tables of absolute paths that a scenario pack asks for (`runtime_dir`). `smoke_verdict` and the smoke
+  checks of `ext-launch` and `ext-collect` use the bounds; the host configuration hash includes the two numbers and the pack
+  tables only when the file sets them, so a launch record binds them and `ext-collect` refuses a record whose host hash is not
+  this host's. A malformed file is refused, never read as the defaults. The file is the owner's: a process running as the
+  owner's own OS user can edit it like any file of that user, so the values are recorded and re-checked, not sealed.
 
 - **EXT-263 (the launch rules on a rootless host).** The host file key `rootless = true` (a TOML boolean; any other
   value is refused, EXT-HOST; no environment override) switches the user rule: the container runs as `0:0`, which is
