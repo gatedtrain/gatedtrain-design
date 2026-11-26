@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 28; this document was last changed in revision 28. The prototype (`gatedtrain` 0.7.0) implements revision 27 except the training-seed unit of revision 20 (05 §3.3); revision 28 is implemented on a development branch of it and is not yet in a release. Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 28; this document was last changed in revision 28. The prototype (`gatedtrain` 0.7.1) implements revision 28 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -1353,9 +1353,8 @@ any other container uid is a subordinate uid. The local backend and `ext-launch`
 
 - **EXT-264 (the host file's owner-side settings; revision 28).** Besides `host_work`, `output_root` and `rootless`, the host
   file takes `gpu_mem_limit_gb` (the smoke GPU-memory bound in GB; default 22.5) and `gpu_cap_h` (the GPU-hour ceiling passed to
-  `gpu-step.sh`; default 1000), each a finite number above 0 (any other value is refused, EXT-HOST); `input_roots`,
-  `interpreter_trees`, `interpreter` and `mirror_root`, which the `GATEDTRAIN_EXT_*` variables used to set (the variables
-  still override the file, print a deprecation line naming the key, and are removed in a later release); and
+  `gpu-step.sh`; default 1000), each a finite number above 0 and at most 1024 GB and 100000 h respectively (any other value is refused, EXT-HOST; a bound above those would mean the check is off); `input_roots`,
+  `interpreter_trees`, `interpreter` and `mirror_root`, which the `GATEDTRAIN_EXT_*` variables used to set (a variable that differs from the file key is refused (EXT-HOST), one that equals it or is set alone works, and each prints a deprecation line naming the key; the variables are removed in gatedtrain 0.9.0); and
   `[packs.<name>]` tables of absolute paths that a scenario pack asks for (`runtime_dir`). `smoke_verdict` and the smoke
   checks of `ext-launch` and `ext-collect` use the bounds; the host configuration hash includes the two numbers and the pack
   tables only when the file sets them, so a launch record binds them and `ext-collect` refuses a record whose host hash is not

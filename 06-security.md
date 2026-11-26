@@ -1,6 +1,6 @@
 # 06. Security, Governance, and Safety
 
-**Status:** The design set is at revision 28; this document was last changed in revision 27. The prototype (`gatedtrain` 0.7.0) implements revision 27 except the training-seed unit of revision 20 (05 §3.3); revision 28 is implemented on a development branch of it and is not yet in a release. Frozen until G0 closes; deferred items in `open-issues.md`. MVP controls (phases P0–P2: the §4 items with those phases, §5, §7, §8, §15, and the P0–P2 rows of §16) are normative. Controls that first apply in P3 or later remain **Direction — detailed review after G0** (R8-20) and are marked "(Direction)".
+**Status:** The design set is at revision 28; this document was last changed in revision 27. The prototype (`gatedtrain` 0.7.1) implements revision 28 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. MVP controls (phases P0–P2: the §4 items with those phases, §5, §7, §8, §15, and the P0–P2 rows of §16) are normative. Controls that first apply in P3 or later remain **Direction — detailed review after G0** (R8-20) and are marked "(Direction)".
 
 **Revision:** 9 (2026-11-05). Sub-design of `design.md` (the overview). Resolves round-1 (GOV-1–8, RT-1–8, EMB-9 safety parts), round-2 (RT2-*, GOV2-*, EMB2-2, EMB2-4 watchdog and interlocks), and the MVP security findings of round 3 (round-3 review record, not published: R9-7, with R9-2 and R9-9). Constraint-cost, `intervened`, and `proposed_action` step fields are defined in 01.
 
