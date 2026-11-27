@@ -1,6 +1,6 @@
 # 05. Evaluation and Lineage
 
-**Status:** The design set is at revision 28; this document was last changed in revision 28. The prototype (`gatedtrain` 0.7.1) implements revision 28 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
+**Status:** The design set is at revision 29; this document was last changed in revision 29. The prototype (`gatedtrain` 0.7.2) implements revision 29 except the training-seed unit of revision 20 (05 §3.3). Frozen until G0 closes; deferred items in `open-issues.md`. Proposed sub-design.
 
 **Revision:** 9 (2026-11-05); applies R9-5 and R9-6 of the round-3 review (record not published). Revision 8 parent: `design.md` (the overview). Implements overview decisions D10 and D11, the exit procedures referenced in overview §7.1, and the round-2 decisions R8-16 and R8-17 plus the statistical parts of R8-2 and R8-15 (round-2 review record, not published).
 
@@ -589,7 +589,7 @@ Intersection-union per-timestep checks without Holm and prediction bounds on the
 
 Graded independence tiers and a transfer test replaced the shared-backbone exemption; gates became typed, pre-registered tests; turn-gate bootstraps, the "noise band", and "three seeds" were replaced by multiplicity control, fresh selection subsamples, and TOST with at least five seeds; contamination checks became modality-specific, asymmetric, and persisted; deadline masking was removed; detectors were defined; `data_version` became `data_ref` with a durable ledger; lockfiles gained hardware and resolved hashes; reproducibility became statistical re-execution.
 
-## 18. AI-native projects (revisions 21, 23, 25, 27 and 28)
+## 18. AI-native projects (revisions 21, 23, 25, 27, 28 and 29)
 
 An AI-native project turns one goal and one small labelled dataset into a trained model and a report whose claim is
 decided on data the training side never saw. This section defines the project, the stage protocol, the pipeline spec
@@ -599,7 +599,7 @@ the trust backend that holds the seal against an agent with a shell, with signed
 the detection of rootful Docker access by the user's account, the local backend that runs the AI-native path's jobs
 and the keeper's inference container (§18.10), and fixes the rule ids AN-20 to AN-25 and EXT-263. Revision 27 makes the keeper's mode an observed fact, adds the
 same-user keeper that needs no sudo (§18.9, AN-27 to AN-34) and moves the accepted container images into an image lock
-(§18.11, IMG-1 to IMG-9). It builds on §3
+(§18.11, IMG-1 to IMG-9). Revision 29 adds a sudo-free builder of a same-user keeper's eval tree (AN-36). It builds on §3
 (gates), §6 (evaluator tiers) and §12 (records). Everything the AI-native path writes is JSON or JSONL with a schema
 id.
 
@@ -867,7 +867,7 @@ gatedtrain starts processes on the AI-native path only (the local backend and th
 `ext-*` commands keep printing commands. The budget and the approvals are cooperative, not a guarantee against the
 agent (§18.10). The drivers are not part of step 1; the local backend is defined in revision 25 (§18.10).
 
-### 18.7 Open after revision 27
+### 18.7 Open after revision 29
 
 - **Decided in revision 23 (step 2):** the keeper (§18.9), signed records verified by `report` and `verify` (AN-14),
   the alpha-investing rule and its false-discovery guarantee (§18.5, AN-15), and the scorer library of §18.4 (AN-17).
@@ -881,6 +881,7 @@ agent (§18.10). The drivers are not part of step 1; the local backend is define
   `setup keeper` defaults to a same-user keeper that needs no sudo (AN-30, AN-31); `setup check` names the outside
   prerequisites (AN-32, AN-33); the setup layout file (AN-34); the accepted images are an image lock with provenance in the report (IMG-1 to IMG-9,
   §18.11).
+- **Decided in revision 29:** the eval tree of a same-user keeper is built by a printed user-level script and checked by the keeper's own rule (AN-36); a sudo-free eval tree for a separate-user keeper is not provided.
 - **Step 3b:** the text scenario pack, the GPU end to end through `gatedtrain project`, and one recipe smoke re-run
   under the rootless rules.
 - **Later steps:** the MCP server and the orchestrator (step 4); a hosted keeper; several hosts; installing the
@@ -913,8 +914,8 @@ agent (§18.10). The drivers are not part of step 1; the local backend is define
 | AN-16 | Sealed items tracked one by one; a report closes the sealed set | §18.9 |
 | AN-17 | Scorer library and pack scorers by reference | §18.4 |
 | AN-18 | Metric confirmation record | §18.9 |
-| AN-19 | `setup keeper` prints, never runs (with the keeper's inference options) | §18.9 |
-| AN-20 | `setup host` prints one root script and runs nothing | §18.10 |
+| AN-19 | `setup keeper` prints, never runs (with the keeper's inference options; an eval tree is owned by the keeper's uid or root) | §18.9 |
+| AN-20 | `setup host` prints one root script and runs nothing (its requirements validator is shared with AN-36) | §18.10 |
 | AN-21 | Rootful-access detection and the downgraded guarantee | §18.10 |
 | AN-22 | Local backend jobs: shared launch rules, submit, status, logs, cancel, artifacts, hand-off, job records | §18.10 |
 | AN-23 | GPU accounting, budget, retries, GPU wait and the GPU log row | §18.10 |
@@ -928,12 +929,13 @@ agent (§18.10). The drivers are not part of step 1; the local backend is define
 | AN-31 | `setup keeper` prints one user-level script for a same-user keeper by default (`set -e`, stops on a bad directory); never runs it | §18.9 |
 | AN-32 | `setup check`: the outside prerequisites, read-only, each with its owner and fix | §18.9 |
 | AN-33 | `setup check` exit codes and output | §18.9 |
-| AN-34 | The setup layout file: schema, precedence, the recorded source of each value, refusals (including non-printable characters) | §18.9 |
+| AN-34 | The setup layout file: schema, precedence, the recorded source of each value, refusals (including non-printable characters); scopes host, separate-user, same-user and eval-tree | §18.9 |
 | AN-35 | The keeper's owner-side options (GPU wait, busy threshold, eval interpreter), recorded in the signed environment record | §18.9 |
 | IMG-1 to IMG-4 | The image lock and the owner's image config: schema, validation, trust of the file, precedence, no widening from the environment | §18.11 |
 | IMG-5, IMG-6 | `gatedtrain image list`, `check` and `add` | §18.11 |
 | IMG-7 to IMG-9 | Image provenance in the report, the keeper's own check, and `verify` | §18.11 |
 | EXT-263 | The launch rules on a rootless host (`rootless = true`) | §18.10 |
+| AN-36 | `setup eval-tree`: the same-user keeper's eval tree built by a printed user-level script (no sudo), checked by `--check` with the keeper's own rule (AN-13) | §18.9 |
 | EXT-264 | The host file's owner-side settings (smoke GPU-memory bound, GPU-hour ceiling, layout keys, pack tables), bound by the host configuration hash | §18.10 |
 
 ### 18.9 The keeper (revisions 23, 25 and 27)
@@ -995,7 +997,8 @@ keeper user. Drivers reach it over a local Unix socket: `KeeperTrust` and `Keepe
   never runs sudo, and `setup` writes nothing. Revision 27: the default mode is `same-user`, whose commands need no
   sudo (AN-30, AN-31 below); the separate-user output is the one described here. A path holding `%`, `$`, whitespace, a quote or a backslash is refused,
   since systemd rewrites or splits those in the unit's `ExecStart=`, and so is a path with a non-printable character. Revision 25: `setup keeper` also takes the
-  keeper's inference options, `--inference-image ID` (`sha256:<64 hex>`), `--eval-tree DIR` (repeatable) and
+  keeper's inference options, `--inference-image ID` (`sha256:<64 hex>`), `--eval-tree DIR` (repeatable; a tree owned by the keeper's uid or root and writable by no one else, AN-13; in same-user mode
+  AN-36 builds one without sudo) and
   `--docker-host URL`, and prints them into `ExecStart=`; the host script of `setup host` (AN-20) writes the same
   serve command into a unit drop-in, which also orders the keeper after the keeper user's service manager
   (`After=` and `Wants=user@<keeper uid>.service`).
@@ -1099,11 +1102,15 @@ keeper user. Drivers reach it over a local Unix socket: `KeeperTrust` and `Keepe
   is `unknown`; it never stops the others. Exit 0 when every required check is ok, 1 when one is missing or unknown
   (AN-33). The output ends by saying that gatedtrain itself needs no sudo for the same-user setup and that the
   administrator items need root on a machine that lacks them.
-- **AN-34 (the setup layout file; revision 27).** `gatedtrain setup host` and `gatedtrain setup keeper` accept
+- **AN-34 (the setup layout file; revision 27).** `gatedtrain setup host`, `gatedtrain setup keeper` and (revision 29)
+  `gatedtrain setup eval-tree` accept
   `--layout FILE`, one TOML file that replaces their path flags, and `gatedtrain setup layout` prints a complete,
   commented layout with the effective defaults. One registry (table, key, type, validator, the flag it replaces, the
   scope it applies to, whether this version supports it) defines the schema; a test compares it with both commands'
-  flags in both directions. `schema_version = 1` is required, exactly; unknown tables or keys, wrong types, invalid
+  flags in both directions. A *scope* is what a layout is read for: `host`, `separate-user`, `same-user` or (revision 29) `eval-tree`
+  (`setup layout --for eval-tree`). The table `[eval_tree]` has the key `root` and applies to the `eval-tree` scope; the key
+  `[inference] eval_requirements` is also the layout key of `setup eval-tree --requirements`; `--python-version`, `--check` and
+  `--executable` of that command have no layout key, each with its reason in the registry. `schema_version = 1` is required, exactly; unknown tables or keys, wrong types, invalid
   TOML, a symlink, a non-regular file or a file over a size cap are refused, and a table that belongs to another mode
   or command is refused naming the mode (`[keeper]` with `--mode same-user`). Values pass the validators the flags
   use (a value with a control or other non-printable character is refused). `[same_user] executable` is the key of
@@ -1126,6 +1133,33 @@ keeper user. Drivers reach it over a local Unix socket: `KeeperTrust` and `Keepe
   check that a generator's time limit fits the client's wait (AN-25) uses the configured wait, and refuses before the grant
   when the wait plus two time limits and the slack exceed the client's timeout. The three rows of AN-34 that earlier
   revisions reserved are these options' layout keys.
+
+- **AN-36 (the eval tree of a same-user keeper without sudo; revision 29).** `gatedtrain setup eval-tree --requirements FILE
+  --python-version X.Y [--root DIR] [--layout FILE] [--executable PATH]` prints one script and runs nothing, writes nothing and
+  starts no process. The script is for the owner's own account: it refuses to run as root and refuses another uid than the one
+  it was printed for. It needs `uv` and GNU coreutils and no sudo, chown, ACL, systemd, Docker or path outside the root, and it
+  changes only files under the root and uv's download cache. In order it installs a standalone CPython with `uv` into
+  `<root>/python` (no link in the owner's `bin`, no registry entry), creates `<root>/eval-venv` from that interpreter, installs
+  the pack's requirements with `pip --isolated --require-hashes --no-deps --only-binary :all:` (the validator of AN-20 refuses a
+  requirements file that is not fully hash-pinned), removes group and other write bits from both trees (`uv` leaves one file
+  group- and world-writable, which the keeper refuses), writes the sha256 of the requirements and the CPython version to
+  `<root>/requirements.sha256` last, and ends with `setup eval-tree --check`. The root is `--root`, the layout key
+  `[eval_tree] root`, or by default `gatedtrain-keeper-eval` beside the keeper's state directory under the owner's XDG data
+  directory, never inside it; it is validated as the other setup paths are (absolute, no `..`, not `/`, no character that
+  `ExecStart=` or a mount would change). The script never clears a directory and never adopts a root that holds files it did
+  not make (a symbolic link or a non-empty directory it did not create is refused); a rerun with the same requirements and
+  CPython version changes nothing and checks again, and other requirements, another version or a venv without the record stop
+  it. The rollback is removing the root, printed as a comment and not run. `--check` is read-only: it applies the keeper's own
+  rule for eval trees (AN-13) to `<root>/python` and `<root>/eval-venv` as the current uid, says that it answers for a
+  same-user keeper only, and lists at most 20 problems and the count of the rest. The last lines of the script print the
+  `--eval-tree` and `--eval-python` options for `setup keeper --mode same-user` (which also needs `--inference-image`).
+  *What does not change.* The keeper's rule (owned by its uid or root, writable by no one else) stays the only authority and
+  gets no flag, variable or layout key that loosens it, and a separate-user keeper, whose uid is not the owner's, refuses the
+  tree this command builds at start, so the command cannot weaken that mode. A user-owned tree is part of same-user mode (the
+  table above): it is not sealed from the owner's account, the keeper checks and hashes it at start only, and a change made
+  afterwards shows in the signed environment record only after a restart. The CPython is `uv`'s download and is not pinned by
+  gatedtrain; the keeper's hash of the tree at start is what records it. A sudo-free eval tree for a separate-user keeper is
+  not provided (`setup host` builds that tree, AN-20).
 
 **Intake over the socket.** `intake_seal` sends the whole data file over the socket; the keeper splits it (the
 deterministic split of AN-6), stores the sealed part, and returns the training part, the sealed summary and the
@@ -1321,7 +1355,8 @@ checked once by hand.
   the owner's Docker context `gatedtrain` at `unix:///run/user/<owner uid>/docker.sock`. With an inference image
   (`<ref>@sha256:<64 hex>`), the keeper's daemon pulls it, the script checks that the image ID is `sha256:<64 hex>`,
   and it writes the keeper unit's drop-in with the serve command and the ordering of AN-19. With eval requirements,
-  each pinned with `--hash=sha256:`, it builds the keeper's eval tree (below). The rootful daemons may keep running for
+  each pinned with `--hash=sha256:`, it builds the keeper's eval tree (below); the check of the requirements file is the one
+  function that `setup eval-tree` (AN-36) uses, and the script `setup host` prints is unchanged by it. The rootful daemons may keep running for
   root-only use. Closing comments, for the owner without sudo: set `rootless = true` and
   `output_root = "/srv/gatedtrain/out"` in the host file; end every old session, then restart the owner's service
   manager (`systemctl restart user@<owner uid>.service`) or reboot, since processes started before the group removal
@@ -1489,7 +1524,9 @@ code, so the keeper's is root-owned: the tree `/opt/gatedtrain-keeper` holds a C
 the pack's hash-pinned requirements (the PyPI hashes are the integrity anchor), both built by the host script. Links
 may point anywhere inside the configured eval trees and nowhere else. The tree is mounted read-only at the same path
 in the container. The base image is pulled by digest by the keeper's own daemon at setup, and the keeper refuses
-another image ID. The eval trees' file hashes and the image ID are in the keeper's environment record (AN-13).
+another image ID. The eval trees' file hashes and the image ID are in the keeper's environment record (AN-13). That tree is
+root-owned for a separate-user keeper; a same-user keeper's tree may instead be owned by the owner and built without sudo
+(`setup eval-tree`, AN-36), with the limits stated there.
 
 **Model hand-off.** Model files reach the keeper through a hand-off directory the keeper user can traverse: the
 `output_root` of the host file points at `/srv/gatedtrain/out` (owner, 0755, outside the owner's home, which other
